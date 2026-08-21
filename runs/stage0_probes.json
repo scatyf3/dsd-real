@@ -1,0 +1,104 @@
+{
+  "k6": {
+    "probe": "k6",
+    "pass": true,
+    "detail": "vllm==0.21.0 native custom_class=False -> NgramProposer subclass shim",
+    "vllm_version": "0.21.0",
+    "native_custom_class": false,
+    "methods": [
+      "deepseek_mtp",
+      "dflash",
+      "draft_model",
+      "eagle",
+      "eagle3",
+      "ernie_mtp",
+      "exaone4_5_mtp",
+      "exaone_moe_mtp",
+      "extract_hidden_states",
+      "gemma4_mtp",
+      "glm4_moe_lite_mtp",
+      "glm4_moe_mtp",
+      "glm_ocr_mtp",
+      "hy_v3_mtp",
+      "longcat_flash_mtp",
+      "medusa",
+      "mimo_mtp",
+      "mimo_v2_mtp",
+      "mlp_speculator",
+      "mtp",
+      "nemotron_h_mtp",
+      "ngram",
+      "ngram_gpu",
+      "pangu_ultra_moe_mtp",
+      "qwen3_5_mtp",
+      "qwen3_next_mtp",
+      "step3p5_mtp",
+      "suffix"
+    ],
+    "seconds": 5.4
+  },
+  "k1": {
+    "probe": "k1",
+    "pass": true,
+    "detail": "calls=33 variable_within_batch=True output_identical_to_nonspec=True distinct_len_sets=[(0,), (0, 1, 2, 3)]",
+    "calls": 33,
+    "varied": true,
+    "identical": true,
+    "seconds": 18.3
+  },
+  "k2": {
+    "probe": "k2",
+    "pass": true,
+    "detail": "tpot(0ms)=20.73ms tpot(5ms)=27.30ms delta=6.57ms expected~5ms recovered=131%",
+    "tpot_base_ms": 20.729,
+    "tpot_delayed_ms": 27.301,
+    "delta_ms": 6.572,
+    "expected_ms": 5.0,
+    "seconds": 19.9
+  },
+  "k7": {
+    "probe": "k7",
+    "pass": true,
+    "detail": "forward taps=23 sum(num_draft_tokens)=276 proposed=288 vocab=151936 draft_probs_is_None=23/23",
+    "calls": 23,
+    "draft_tokens": 276,
+    "logits_rows": 368,
+    "vocab": 151936,
+    "draft_probs_none": 23,
+    "live": false,
+    "proposed_tokens": 288,
+    "seconds": 15.3
+  },
+  "k3": {
+    "probe": "k3",
+    "pass": true,
+    "detail": "CountingScheduler.schedule() called 32x; outputs non-empty=True",
+    "schedule_calls": 32,
+    "seconds": 14.9
+  },
+  "k4": {
+    "probe": "k4",
+    "pass": true,
+    "detail": "custom RequestQueue popped 40 requests; outputs identical to FCFS baseline=True (n=40)",
+    "pops": 40,
+    "identical": true,
+    "n_requests": 40,
+    "seconds": 18.5
+  },
+  "k5": {
+    "probe": "k5",
+    "pass": true,
+    "detail": "register() fired in 2 distinct process(es): [51350, 51432]",
+    "pids": [
+      51350,
+      51432
+    ],
+    "discovered": [
+      "dsdreal -> dsdreal.target.plugin:register",
+      "dsdreal_probe -> dsdreal.target.plugin:register_probe",
+      "lora_filesystem_resolver -> vllm.plugins.lora_resolvers.filesystem_resolver:register_filesystem_resolver",
+      "lora_hf_hub_resolver -> vllm.plugins.lora_resolvers.hf_hub_resolver:register_hf_hub_resolver"
+    ],
+    "seconds": 24.1
+  }
+}
