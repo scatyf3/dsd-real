@@ -49,9 +49,9 @@ def reset() -> None:
 class CountingScheduler(Scheduler):
     """Delegates entirely to vLLM; only records that it was used."""
 
-    def schedule(self):
+    def schedule(self, throttle_prefills: bool = False):
         _bump(_COUNT)
-        return super().schedule()
+        return super().schedule(throttle_prefills)
 
 
 class BucketQueueScheduler(Scheduler):

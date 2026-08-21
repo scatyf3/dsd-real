@@ -133,8 +133,8 @@ def probe_k1():
 
         PATTERN = [0, 1, 3, 2]
 
-        def propose(self, sampled_token_ids, num_tokens_no_spec, token_ids_cpu,
-                    slot_mappings=None):
+        def propose(self, num_speculative_tokens, sampled_token_ids, num_tokens_no_spec,
+                    token_ids_cpu, slot_mappings=None):
             seen["calls"] += 1
             out = []
             for i, sampled in enumerate(sampled_token_ids):
@@ -200,8 +200,8 @@ def probe_k2():
             super().__init__(cfg)
             self.delay = delay
 
-        def propose(self, sampled_token_ids, num_tokens_no_spec, token_ids_cpu,
-                    slot_mappings=None):
+        def propose(self, num_speculative_tokens, sampled_token_ids, num_tokens_no_spec,
+                    token_ids_cpu, slot_mappings=None):
             self.calls += 1
             if self.delay:
                 _time.sleep(self.delay)
@@ -368,8 +368,8 @@ def probe_k7():
     proposed = {"tokens": 0}
 
     class FixedGammaProposer(NgramProposer):
-        def propose(self, sampled_token_ids, num_tokens_no_spec, token_ids_cpu,
-                    slot_mappings=None):
+        def propose(self, num_speculative_tokens, sampled_token_ids, num_tokens_no_spec,
+                    token_ids_cpu, slot_mappings=None):
             if not tap["live"]:
                 return [[] for _ in sampled_token_ids]
             out = []
