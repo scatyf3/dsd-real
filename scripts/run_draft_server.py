@@ -3,7 +3,12 @@
 ROUTER, so the target reaches it over a real socket instead of an in-process
 call -- the whole point of 2b versus 2a.
 
-    python scripts/run_draft_server.py --port 5560 --ready-file runs/draft_ready
+For N-drafter fan-out, launch one of these per drafter with a distinct
+--drafter-id and --bind, then point ZmqDraftClient at all of them keyed by
+that same id: {"d0": addr0, "d1": addr1, ...}.
+
+    python scripts/run_draft_server.py --bind tcp://0.0.0.0:5560 \\
+        --drafter-id d0 --ready-file runs/draft_ready
 """
 from __future__ import annotations
 
@@ -17,6 +22,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=os.environ.get("DSD_DRAFT_MODEL", "Qwen/Qwen3-0.6B"))
     ap.add_argument("--bind", default="tcp://0.0.0.0:5560")
+    ap.add_argument("--drafter-id", default="d0",
+                     help="must match the key ZmqDraftClient's address dict "
+                          "uses for this process")
     ap.add_argument("--ready-file", default=None,
                      help="written with the bound address once serving starts")
     ap.add_argument("--gpu-frac", type=float, default=0.85)
@@ -39,7 +47,7 @@ def main() -> int:
               enforce_eager=True, dtype="float32", disable_log_stats=True,
               max_model_len=1024)
     print("draft server: LLM constructed, wiring VllmDraftEngine...", flush=True)
-    engine = VllmDraftEngine(llm, node_id="d0")
+    engine = VllmDraftEngine(llm, node_id=args.drafter_id)
     print(f"draft server: binding ROUTER to {args.bind}...", flush=True)
     server = DraftServer(engine, args.bind)
     print(f"draft server: bound to {server.bound_addr}, starting serve thread...", flush=True)

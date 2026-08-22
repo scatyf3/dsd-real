@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from dsdreal.draft.engine_echo import EchoDraftEngine
+from dsdreal.policy.routing import RoundRobin
 from dsdreal.proto.transport import InProcessDraftClient
 from dsdreal.target import proposer
 
@@ -138,3 +139,84 @@ def test_separate_instances_sharing_a_drafter_dont_collide_on_slot0():
 
     assert p1._slot_seq[0] != p2._slot_seq[0]
     assert {p1._slot_seq[0], p2._slot_seq[0]} <= set(engine.state)
+
+
+def test_no_routing_policy_keeps_every_request_on_the_fixed_drafter_id():
+    """Backward-compat: omitting `routing` must reproduce the pre-fan-out
+    behavior exactly, since every existing verify script and sbatch job
+    relies on it."""
+    gamma = 2
+    client = InProcessDraftClient({"d0": EchoDraftEngine(node_id="d0"),
+                                    "d1": EchoDraftEngine(node_id="d1")})
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client,
+                                      drafter_id="d0")
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3]), ([1], [4, 5, 6])])
+    p.propose(sampled, n_hist, tok)
+    assert p._slot_drafter == {0: "d0", 1: "d0"}
+
+
+def test_routing_policy_assigns_fresh_requests_across_drafters():
+    gamma = 2
+    client = InProcessDraftClient({"d0": EchoDraftEngine(node_id="d0"),
+                                    "d1": EchoDraftEngine(node_id="d1")})
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client,
+                                      routing=RoundRobin())
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3]), ([1], [4, 5, 6])])
+    p.propose(sampled, n_hist, tok)
+    assert p._slot_drafter == {0: "d0", 1: "d1"}
+
+
+def test_routing_choice_is_sticky_for_the_life_of_the_request():
+    """Picking a drafter only happens on the fresh round -- later rounds for
+    the same slot must keep going to the same drafter, or that drafter's
+    confirmed-length bookkeeping desyncs (it never saw the earlier rounds)."""
+    gamma = 2
+    client = InProcessDraftClient({"d0": EchoDraftEngine(node_id="d0"),
+                                    "d1": EchoDraftEngine(node_id="d1")})
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client,
+                                      routing=RoundRobin())
+
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3])])
+    p.propose(sampled, n_hist, tok)
+    chosen = p._slot_drafter[0]
+
+    for _ in range(3):
+        history = [1, 2, 3] + [77, 88] * (_ + 1)
+        sampled, n_hist, tok = _batch([([1], history)])
+        p.propose(sampled, n_hist, tok)  # must not raise "desync"
+        assert p._slot_drafter[0] == chosen
+
+
+def test_routing_picks_again_when_a_slot_is_handed_to_a_new_request():
+    gamma = 2
+    client = InProcessDraftClient({"d0": EchoDraftEngine(node_id="d0"),
+                                    "d1": EchoDraftEngine(node_id="d1")})
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client,
+                                      routing=RoundRobin())
+
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3])])
+    p.propose(sampled, n_hist, tok)
+    assert p._slot_drafter[0] == "d0"
+
+    # Slot 0 handed to a shorter, unrelated request next step -> fresh again.
+    sampled, n_hist, tok = _batch([([1], [9, 9])])
+    p.propose(sampled, n_hist, tok)
+    assert p._slot_drafter[0] == "d1"
+
+
+def test_assignment_sink_records_only_routed_fresh_picks():
+    gamma = 2
+    client = InProcessDraftClient({"d0": EchoDraftEngine(node_id="d0"),
+                                    "d1": EchoDraftEngine(node_id="d1")})
+    assignments: list[str] = []
+    proposer.configure(client, routing=RoundRobin(), assignments=assignments)
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma))
+
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3]), ([1], [4, 5, 6])])
+    p.propose(sampled, n_hist, tok)
+    assert assignments == ["d0", "d1"]
+
+    # A non-fresh round for the same two slots must not append again.
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3, 7, 8]), ([1], [4, 5, 6, 9, 10])])
+    p.propose(sampled, n_hist, tok)
+    assert assignments == ["d0", "d1"]

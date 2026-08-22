@@ -141,3 +141,15 @@ def test_empty_batch_is_free(one_drafter):
     t0 = time.perf_counter()
     assert client.speculate([]) == []
     assert (time.perf_counter() - t0) * 1000.0 < 5.0
+
+
+def test_drafter_ids_lists_the_registry():
+    servers = [DraftServer(EchoDraftEngine(node_id=f"d{i}"), "tcp://127.0.0.1:0").start()
+               for i in range(3)]
+    client = ZmqDraftClient({f"d{i}": s.bound_addr for i, s in enumerate(servers)})
+    try:
+        assert sorted(client.drafter_ids) == ["d0", "d1", "d2"]
+    finally:
+        client.close()
+        for s in servers:
+            s.stop()

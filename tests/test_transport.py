@@ -154,3 +154,9 @@ def test_null_emulator_injects_nothing():
 def test_factory_rejects_unknown_transport():
     with pytest.raises(ValueError, match="unknown transport"):
         make_client("carrier-pigeon")
+
+
+def test_drafter_ids_lists_the_registry():
+    engines = {f"d{i}": EchoDraftEngine(node_id=f"d{i}") for i in range(3)}
+    client = InProcessDraftClient(engines)
+    assert sorted(client.drafter_ids) == ["d0", "d1", "d2"]

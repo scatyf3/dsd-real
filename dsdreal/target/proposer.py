@@ -26,13 +26,19 @@ from __future__ import annotations
 
 import uuid
 
+from dsdreal.policy.routing import RoutingPolicy
 from dsdreal.proto.transport import DraftClient
 from dsdreal.proto.messages import SpeculateRequest
 
 _default_client: DraftClient | None = None
+_stats_sink: list[int] | None = None
+_default_routing: RoutingPolicy | None = None
+_assignment_sink: list[str] | None = None
 
 
-def configure(client: DraftClient | None) -> None:
+def configure(client: DraftClient | None, stats: list[int] | None = None,
+              routing: RoutingPolicy | None = None,
+              assignments: list[str] | None = None) -> None:
     """Call before constructing the LLM.
 
     `custom_class` instantiates the proposer with only `vllm_config`
@@ -40,17 +46,42 @@ def configure(client: DraftClient | None) -> None:
     way to hand it a transport. Pass None to drop the reference once done
     (e.g. before freeing the client's underlying engine/model) -- this
     module holding it alive would otherwise outlive `del` calls elsewhere.
+
+    `stats`, if given, is a list this module appends to: one int per
+    non-fresh `propose()` round, the number of tokens confirmed since the
+    prior round for that slot (accepted draft tokens + the bonus token).
+    That is the ground-truth per-round acceptance length -- for measuring it
+    directly instead of inferring it from a timing slope (see
+    scripts/verify_acceptance_length_parity.py). Pass None (the default) to
+    disable collection.
+
+    `routing`, if given, picks which of `client.drafter_ids` a *fresh*
+    request is assigned to (see dsdreal/policy/routing.py). Pass None (the
+    default) to keep the single-drafter behavior: every request goes to
+    `drafter_id` as passed to RemoteDraftProposer's constructor (or its
+    default, "d0").
+
+    `assignments`, if given, is a list this module appends to: the chosen
+    drafter_id every time `routing` assigns one to a fresh request. Only
+    populated when `routing` is set -- for measuring the actual fan-out
+    distribution (see scripts/verify_ndrafter_fanout.py) without having to
+    scrape per-drafter server logs.
     """
-    global _default_client
+    global _default_client, _stats_sink, _default_routing, _assignment_sink
     _default_client = client
+    _stats_sink = stats
+    _default_routing = routing
+    _assignment_sink = assignments
 
 
 class RemoteDraftProposer:
     def __init__(self, vllm_config, client: DraftClient | None = None,
-                 drafter_id: str = "d0") -> None:
+                 drafter_id: str = "d0",
+                 routing: RoutingPolicy | None = None) -> None:
         spec_config = vllm_config.speculative_config
         self.k = spec_config.num_speculative_tokens
         self.drafter_id = drafter_id
+        self.routing = routing if routing is not None else _default_routing
         self.client = client if client is not None else _default_client
         if self.client is None:
             raise RuntimeError(
@@ -66,6 +97,7 @@ class RemoteDraftProposer:
         self._instance_id = uuid.uuid4().hex[:8]
         self._slot_seq: dict[int, str] = {}
         self._slot_n_hist: dict[int, int] = {}
+        self._slot_drafter: dict[int, str] = {}
         self._next_seq = 0
 
     def propose(self, sampled_token_ids, num_tokens_no_spec, token_ids_cpu,
@@ -82,10 +114,18 @@ class RemoteDraftProposer:
                 seq_id = f"{self._instance_id}-slot{i}-{self._next_seq}"
                 self._next_seq += 1
                 self._slot_seq[i] = seq_id
+                if self.routing is not None:
+                    drafter_id = self.routing.select_drafter(self.client.drafter_ids)
+                    if _assignment_sink is not None:
+                        _assignment_sink.append(drafter_id)
+                else:
+                    drafter_id = self.drafter_id
+                self._slot_drafter[i] = drafter_id
                 prompt_token_ids = [int(t) for t in token_ids_cpu[i, :n_hist]]
                 accepted_tokens: list[int] = []
             else:
                 seq_id = self._slot_seq[i]
+                drafter_id = self._slot_drafter[i]
                 prompt_token_ids = None
                 # Delta since our last call -- a stateful drafter (anything
                 # that isn't purely positional like ReplayDraftEngine) needs
@@ -94,11 +134,13 @@ class RemoteDraftProposer:
                 # VllmDraftEngine/EchoDraftEngine desync while
                 # ReplayDraftEngine (num_confirmed-only) stayed silent.
                 accepted_tokens = [int(t) for t in token_ids_cpu[i, last:n_hist]]
+                if _stats_sink is not None:
+                    _stats_sink.append(len(accepted_tokens))
             self._slot_n_hist[i] = n_hist
 
             requests.append(SpeculateRequest(
                 seq_id=seq_id,
-                drafter_id=self.drafter_id,
+                drafter_id=drafter_id,
                 gamma=self.k,
                 num_confirmed=n_hist,
                 accepted_tokens=accepted_tokens,

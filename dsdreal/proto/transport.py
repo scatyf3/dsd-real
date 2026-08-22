@@ -37,6 +37,11 @@ class DraftClient(ABC):
     @abstractmethod
     def free(self, seq_ids: Iterable[str]) -> None: ...
 
+    @property
+    @abstractmethod
+    def drafter_ids(self) -> list[str]:
+        """Every drafter this client can reach, for a RoutingPolicy to pick from."""
+
     def close(self) -> None:
         pass
 
@@ -74,6 +79,10 @@ class InProcessDraftClient(DraftClient):
                 f"unknown drafter_id {drafter_id!r}; "
                 f"registered: {sorted(self.engines)}"
             ) from None
+
+    @property
+    def drafter_ids(self) -> list[str]:
+        return list(self.engines)
 
     def speculate(self, requests: list[SpeculateRequest]) -> list[SpeculateReply]:
         if not requests:
@@ -140,6 +149,10 @@ class ZmqDraftClient(DraftClient):
                 f"unknown drafter_id {drafter_id!r}; "
                 f"registered: {sorted(self._sockets)}"
             ) from None
+
+    @property
+    def drafter_ids(self) -> list[str]:
+        return list(self._sockets)
 
     def speculate(self, requests: list[SpeculateRequest]) -> list[SpeculateReply]:
         if not requests:
