@@ -1,0 +1,140 @@
+"""RemoteDraftProposer against a real DraftEngine (EchoDraftEngine), no GPU
+and no vLLM import -- `propose()`'s inputs are hand-built numpy arrays
+shaped like what gpu_model_runner.py actually passes.
+
+Regression coverage for a real bug: propose() built SpeculateRequest without
+ever setting accepted_tokens, so a stateful drafter's local confirmed count
+silently fell behind num_confirmed and desynced a few rounds in.
+ReplayDraftEngine never noticed (it's purely positional off num_confirmed),
+which is exactly why this stayed hidden until VllmDraftEngine hit it on GPU.
+"""
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from dsdreal.draft.engine_echo import EchoDraftEngine
+from dsdreal.proto.transport import InProcessDraftClient
+from dsdreal.target import proposer
+
+
+class _FakeSpecConfig:
+    def __init__(self, k):
+        self.num_speculative_tokens = k
+
+
+class _FakeVllmConfig:
+    def __init__(self, k):
+        self.speculative_config = _FakeSpecConfig(k)
+
+
+def _batch(rows, max_len=32):
+    """rows: list of (sampled_this_step, full_history) -> the three arrays
+    propose() receives. `sampled_this_step` empty means "not active"."""
+    n = len(rows)
+    sampled = [list(s) for s, _ in rows]
+    num_tokens_no_spec = np.array([len(h) for _, h in rows], dtype=np.int64)
+    token_ids_cpu = np.zeros((n, max_len), dtype=np.int64)
+    for i, (_, h) in enumerate(rows):
+        token_ids_cpu[i, :len(h)] = h
+    return sampled, num_tokens_no_spec, token_ids_cpu
+
+
+@pytest.fixture(autouse=True)
+def _reset_default_client():
+    yield
+    proposer.configure(None)
+
+
+def test_multi_round_never_desyncs():
+    gamma = 2
+    client = InProcessDraftClient(EchoDraftEngine())
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client)
+
+    prompt = [10, 11, 12]
+    sampled, n_hist, tok = _batch([([1], prompt)])
+    out = p.propose(sampled, n_hist, tok)
+    assert len(out[0]) == gamma
+
+    # Target accepted 1 of gamma and appended its own bonus token: history
+    # grows by 2, and the new tokens are NOT what the drafter proposed.
+    history2 = prompt + [77777, 88888]
+    sampled, n_hist, tok = _batch([([1], history2)])
+    out = p.propose(sampled, n_hist, tok)  # must not raise "desync"
+    assert len(out[0]) == gamma
+
+    history3 = history2 + [55555, 66666]
+    sampled, n_hist, tok = _batch([([1], history3)])
+    out = p.propose(sampled, n_hist, tok)
+    assert len(out[0]) == gamma
+
+
+def test_zero_accepted_round_is_still_consistent():
+    """Full rejection: history grows by exactly 1 (the bonus token only)."""
+    gamma = 3
+    client = InProcessDraftClient(EchoDraftEngine())
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client)
+
+    prompt = [1, 2, 3]
+    sampled, n_hist, tok = _batch([([1], prompt)])
+    p.propose(sampled, n_hist, tok)
+
+    history2 = prompt + [999]
+    sampled, n_hist, tok = _batch([([1], history2)])
+    p.propose(sampled, n_hist, tok)  # must not raise
+
+
+def test_slot_reuse_by_a_different_request_mints_a_fresh_seq_id():
+    gamma = 2
+    client = InProcessDraftClient(EchoDraftEngine())
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client)
+
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3, 4, 5])])
+    p.propose(sampled, n_hist, tok)
+    first_seq_id = p._slot_seq[0]
+
+    # Slot 0 handed to a shorter, unrelated request next step.
+    sampled, n_hist, tok = _batch([([1], [9, 9])])
+    p.propose(sampled, n_hist, tok)  # must not raise
+    assert p._slot_seq[0] != first_seq_id
+
+
+def test_inactive_row_is_skipped_and_returns_empty():
+    gamma = 2
+    client = InProcessDraftClient(EchoDraftEngine())
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(gamma), client=client)
+    sampled, n_hist, tok = _batch([([], [1, 2, 3])])
+    out = p.propose(sampled, n_hist, tok)
+    assert out == [[]]
+
+
+def test_uses_module_level_default_client():
+    client = InProcessDraftClient(EchoDraftEngine())
+    proposer.configure(client)
+    p = proposer.RemoteDraftProposer(_FakeVllmConfig(2))
+    assert p.client is client
+
+
+def test_raises_without_a_configured_client():
+    with pytest.raises(RuntimeError, match="configure"):
+        proposer.RemoteDraftProposer(_FakeVllmConfig(2))
+
+
+def test_separate_instances_sharing_a_drafter_dont_collide_on_slot0():
+    """Regression: a real drafter (VllmDraftEngine) outlives any single
+    RemoteDraftProposer -- reused across target engine restarts. Two
+    instances both minting "slot0-0" for their first request collided in
+    the drafter's state dict and desynced on GPU (real bug, caught here)."""
+    engine = EchoDraftEngine()
+    client = InProcessDraftClient(engine)
+
+    p1 = proposer.RemoteDraftProposer(_FakeVllmConfig(2), client=client)
+    sampled, n_hist, tok = _batch([([1], [1, 2, 3])])
+    p1.propose(sampled, n_hist, tok)
+
+    p2 = proposer.RemoteDraftProposer(_FakeVllmConfig(2), client=client)
+    sampled, n_hist, tok = _batch([([1], [9, 9, 9, 9, 9, 9])])
+    p2.propose(sampled, n_hist, tok)  # must not raise "desync"
+
+    assert p1._slot_seq[0] != p2._slot_seq[0]
+    assert {p1._slot_seq[0], p2._slot_seq[0]} <= set(engine.state)

@@ -14,9 +14,12 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
+import msgspec
+import zmq
+
 from dsdreal.netem.base import NetworkEmulator, block_for
 from dsdreal.netem.null import NullEmulator
-from dsdreal.proto.messages import SpeculateReply, SpeculateRequest
+from dsdreal.proto.messages import FreeSeq, SpeculateReply, SpeculateRequest
 
 
 class DraftClient(ABC):
@@ -48,8 +51,8 @@ class InProcessDraftClient(DraftClient):
     """Simplest possible transport: call the drafter directly.
 
     No sockets, no serialization. Used by Stage 2 (fused mode) and by every
-    no-GPU test. Swapping this for the ZMQ client is the whole of Stage 3 —
-    nothing above this interface changes.
+    no-GPU test. Swapping this for ZmqDraftClient changes nothing above
+    this interface — that swap is real now, not a placeholder.
 
     Delay is still applied, so fused runs produce comparable timings. Because
     the calls are inevitably serial here, the emulated delay is charged once
@@ -103,10 +106,104 @@ class InProcessDraftClient(DraftClient):
             engine.close()
 
 
+class ZmqDraftClient(DraftClient):
+    """One DEALER socket per drafter, matching InProcessDraftClient's dict-
+    keyed-by-drafter_id shape so swapping transports changes nothing above
+    this interface.
+
+    A batch fans out concurrently: every request is sent before any recv, so
+    wall clock is bounded by the slowest drafter's RTT + compute, not their
+    sum. See draft/server.py for the wire framing this speaks.
+    """
+
+    def __init__(self, addresses: dict[str, str], node_id: str = "t0",
+                 emulator: NetworkEmulator | None = None,
+                 context: "zmq.Context | None" = None,
+                 timeout_s: float = 5.0) -> None:
+        super().__init__(node_id=node_id, emulator=emulator)
+        self._ctx = context or zmq.Context.instance()
+        self._sockets: dict[str, zmq.Socket] = {}
+        for drafter_id, addr in addresses.items():
+            sock = self._ctx.socket(zmq.DEALER)
+            sock.setsockopt(zmq.LINGER, 0)
+            sock.connect(addr)
+            self._sockets[drafter_id] = sock
+        self._timeout_s = timeout_s
+        self._enc = msgspec.msgpack.Encoder()
+        self._reply_dec = msgspec.msgpack.Decoder(SpeculateReply)
+
+    def _socket_for(self, drafter_id: str) -> "zmq.Socket":
+        try:
+            return self._sockets[drafter_id]
+        except KeyError:
+            raise KeyError(
+                f"unknown drafter_id {drafter_id!r}; "
+                f"registered: {sorted(self._sockets)}"
+            ) from None
+
+    def speculate(self, requests: list[SpeculateRequest]) -> list[SpeculateReply]:
+        if not requests:
+            return []
+        sent = time.perf_counter()
+        out_ms = [self.emulator.one_way_ms(self.node_id, r.drafter_id)
+                  for r in requests]
+        block_for(max(out_ms) / 1000.0)
+
+        sockets_used = set()
+        for r in requests:
+            sock = self._socket_for(r.drafter_id)
+            sockets_used.add(sock)
+            sock.send_multipart([b"SPEC", r.seq_id.encode(), self._enc.encode(r)])
+
+        poller = zmq.Poller()
+        for sock in sockets_used:
+            poller.register(sock, zmq.POLLIN)
+
+        pending = {r.seq_id for r in requests}
+        replies: dict[str, SpeculateReply] = {}
+        deadline = time.perf_counter() + self._timeout_s
+        while pending:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                raise TimeoutError(f"no reply from drafters for {sorted(pending)}")
+            for sock, ev in poller.poll(timeout=remaining * 1000.0):
+                if ev != zmq.POLLIN:
+                    continue
+                msg_type, corr_id, payload = sock.recv_multipart()
+                seq_id = corr_id.decode()
+                if msg_type == b"ERR ":
+                    raise ValueError(f"drafter error on {seq_id}: {payload.decode()}")
+                replies[seq_id] = self._reply_dec.decode(payload)
+                pending.discard(seq_id)
+
+        back_ms = [self.emulator.one_way_ms(r.drafter_id, self.node_id)
+                   for r in requests]
+        block_for(max(back_ms) / 1000.0)
+        recv = time.perf_counter()
+
+        out = []
+        for r, o, b in zip(requests, out_ms, back_ms):
+            reply = replies[r.seq_id]
+            reply.sent_ms = sent * 1000.0
+            reply.recv_ms = recv * 1000.0
+            reply.injected_delay_ms = o + b
+            out.append(reply)
+        return out
+
+    def free(self, seq_ids: Iterable[str]) -> None:
+        payload = self._enc.encode(FreeSeq(seq_ids=list(seq_ids)))
+        for sock in self._sockets.values():
+            sock.send_multipart([b"FREE", b"", payload])
+
+    def close(self) -> None:
+        for sock in self._sockets.values():
+            sock.close(linger=0)
+
+
 def make_client(kind: str, **kwargs) -> DraftClient:
     """Factory so config can name a transport without importing it."""
     if kind in ("inprocess", "local", "fused"):
         return InProcessDraftClient(**kwargs)
     if kind == "zmq":
-        raise NotImplementedError("ZmqDraftClient lands in Stage 3")
+        return ZmqDraftClient(**kwargs)
     raise ValueError(f"unknown transport {kind!r}")

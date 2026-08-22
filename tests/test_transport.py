@@ -151,8 +151,6 @@ def test_null_emulator_injects_nothing():
     assert NullEmulator().one_way_ms("a", "b") == 0.0
 
 
-def test_factory_rejects_unknown_and_flags_stage3():
+def test_factory_rejects_unknown_transport():
     with pytest.raises(ValueError, match="unknown transport"):
         make_client("carrier-pigeon")
-    with pytest.raises(NotImplementedError, match="Stage 3"):
-        make_client("zmq")

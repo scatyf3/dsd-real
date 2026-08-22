@@ -24,18 +24,22 @@ last saw here" and a smaller one means the slot was handed to someone new.
 """
 from __future__ import annotations
 
+import uuid
+
 from dsdreal.proto.transport import DraftClient
 from dsdreal.proto.messages import SpeculateRequest
 
 _default_client: DraftClient | None = None
 
 
-def configure(client: DraftClient) -> None:
+def configure(client: DraftClient | None) -> None:
     """Call before constructing the LLM.
 
     `custom_class` instantiates the proposer with only `vllm_config`
     (create_custom_proposer in vLLM), so a module-level default is the only
-    way to hand it a transport.
+    way to hand it a transport. Pass None to drop the reference once done
+    (e.g. before freeing the client's underlying engine/model) -- this
+    module holding it alive would otherwise outlive `del` calls elsewhere.
     """
     global _default_client
     _default_client = client
@@ -54,20 +58,15 @@ class RemoteDraftProposer:
                 "dsdreal.target.proposer.configure(client) before "
                 "constructing the LLM."
             )
+        # A drafter (VllmDraftEngine, a real server) can outlive any single
+        # RemoteDraftProposer -- reused across engine restarts, or serving
+        # more than one target. "slot0-0" naming without this would collide
+        # with a stale entry left in the drafter's own state dict by an
+        # earlier, unrelated instance that also started counting from slot 0.
+        self._instance_id = uuid.uuid4().hex[:8]
         self._slot_seq: dict[int, str] = {}
         self._slot_n_hist: dict[int, int] = {}
         self._next_seq = 0
-
-    def _seq_id_for(self, i: int, n_hist: int) -> tuple[str, bool]:
-        """Returns (seq_id, is_fresh)."""
-        last = self._slot_n_hist.get(i)
-        fresh = last is None or n_hist < last
-        if fresh:
-            seq_id = f"slot{i}-{self._next_seq}"
-            self._next_seq += 1
-            self._slot_seq[i] = seq_id
-        self._slot_n_hist[i] = n_hist
-        return self._slot_seq[i], fresh
 
     def propose(self, sampled_token_ids, num_tokens_no_spec, token_ids_cpu,
                 slot_mappings=None) -> list[list[int]]:
@@ -77,15 +76,33 @@ class RemoteDraftProposer:
             if not sampled:
                 continue
             n_hist = int(num_tokens_no_spec[i])
-            seq_id, fresh = self._seq_id_for(i, n_hist)
+            last = self._slot_n_hist.get(i)
+            fresh = last is None or n_hist < last
+            if fresh:
+                seq_id = f"{self._instance_id}-slot{i}-{self._next_seq}"
+                self._next_seq += 1
+                self._slot_seq[i] = seq_id
+                prompt_token_ids = [int(t) for t in token_ids_cpu[i, :n_hist]]
+                accepted_tokens: list[int] = []
+            else:
+                seq_id = self._slot_seq[i]
+                prompt_token_ids = None
+                # Delta since our last call -- a stateful drafter (anything
+                # that isn't purely positional like ReplayDraftEngine) needs
+                # this to keep its own confirmed length in lockstep with
+                # num_confirmed. Omitting it is exactly the bug that let
+                # VllmDraftEngine/EchoDraftEngine desync while
+                # ReplayDraftEngine (num_confirmed-only) stayed silent.
+                accepted_tokens = [int(t) for t in token_ids_cpu[i, last:n_hist]]
+            self._slot_n_hist[i] = n_hist
+
             requests.append(SpeculateRequest(
                 seq_id=seq_id,
                 drafter_id=self.drafter_id,
                 gamma=self.k,
                 num_confirmed=n_hist,
-                prompt_token_ids=(
-                    [int(t) for t in token_ids_cpu[i, :n_hist]] if fresh else None
-                ),
+                accepted_tokens=accepted_tokens,
+                prompt_token_ids=prompt_token_ids,
             ))
             active_rows.append(i)
 
