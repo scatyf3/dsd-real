@@ -46,3 +46,4 @@ for m in $METHODS; do
     done
 done
 $DSD_PY scripts/make_table3.py "$OUT" | tee "$OUT/table3.md"
+$DSD_PY scripts/deployment_report.py "$OUT" > "$OUT/deployment.md"

@@ -54,6 +54,18 @@ for ((i = 0; i < N; i++)); do
 done
 for ((i = 0; i < N; i++)); do addrs+=(--draft-addr "d$i=$(cat "$OUT/draft_d$i.ready")"); done
 echo "drafters ready (N=$N, $per_gpu per GPU on $DGPUS, frac $frac)"
+# Where everything ran: tier T1 = one drafter per GPU, T2 = several share one.
+{
+    printf '{"host": "%s", "target": {"gpu": %s, "model": "%s"}, "drafters_per_gpu": %s, ' \
+        "$(uname -n)" "$TGPU" "$TARGET_MODEL" "$per_gpu"
+    printf '"tier": "%s", "draft_kind": "%s", "draft_model": "%s", "drafters": {' \
+        "$([ "$per_gpu" -gt 1 ] && echo T2 || echo T1)" "$DRAFT_KIND" "$DRAFT_MODEL"
+    for ((i = 0; i < N; i++)); do
+        printf '%s"d%d": {"gpu": %s, "addr": "%s"}' "$([ $i -gt 0 ] && echo ,)" "$i" \
+            "${dg[$((i % ${#dg[@]}))]}" "$(cat "$OUT/draft_d$i.ready")"
+    done
+    printf '}, "gpus": "%s"}\n' "$(nvidia-smi --query-gpu=index,name --format=csv,noheader | tr '\n' ';')"
+} > "$OUT/placement.json"
 
 CUDA_VISIBLE_DEVICES=$TGPU "$PY" -m dsdreal.experiments.driver \
     --target-model "$TARGET_MODEL" "${addrs[@]}" --out "$OUT" "$@" 2>&1 | tee "$OUT/driver.log" \
