@@ -18,17 +18,20 @@ timeout.
 """
 from __future__ import annotations
 
+import os
 import threading
+import time
 
 import msgspec
 import zmq
 
-from dsdreal.draft.base import DraftEngine
+from dsdreal.draft.base import DraftEngine, speculate_many
 from dsdreal.proto.messages import FreeSeq, SpeculateRequest
 
 _SPEC = b"SPEC"
 _FREE = b"FREE"
 _ERR = b"ERR "
+_LOG = os.environ.get("DSD_DRAFT_LOG") == "1"
 
 
 class DraftServer:
@@ -59,21 +62,36 @@ class DraftServer:
         while not self._stop.is_set():
             if not dict(poller.poll(timeout=100)):
                 continue
-            identity, msg_type, corr_id, payload = self._sock.recv_multipart()
-            if msg_type == _FREE:
-                self.engine.free(self._free_dec.decode(payload).seq_ids)
+            # A client sends one step's requests back to back; drain every
+            # one already readable and serve them as a single batch, so a
+            # batching engine runs one forward pass per step, not one per seq.
+            pending: list[tuple[bytes, SpeculateRequest]] = []
+            while True:
+                try:
+                    identity, msg_type, corr_id, payload = self._sock.recv_multipart(zmq.NOBLOCK)
+                except zmq.Again:
+                    break
+                if msg_type == _FREE:
+                    self.engine.free(self._free_dec.decode(payload).seq_ids)
+                    continue
+                pending.append((identity, self._req_dec.decode(payload)))
+            if not pending:
                 continue
-            request = self._req_dec.decode(payload)
-            try:
-                reply = self.engine.speculate(request)
-            except Exception as exc:  # noqa: BLE001 - must reach the client, not kill the loop
-                self._sock.send_multipart(
-                    [identity, _ERR, corr_id, str(exc).encode()]
-                )
-                continue
-            self._sock.send_multipart(
-                [identity, _SPEC, request.seq_id.encode(), self._enc.encode(reply)]
-            )
+            t0 = time.perf_counter()
+            results = speculate_many(self.engine, [r for _, r in pending])
+            if _LOG:
+                print(f"[draft {self.engine.node_id}] batch={len(pending)} "
+                      f"{(time.perf_counter() - t0) * 1000.0:.1f}ms", flush=True)
+            for (identity, request), result in zip(pending, results):
+                if isinstance(result, Exception):
+                    # must reach the client as a re-raise, not a silent timeout
+                    self._sock.send_multipart(
+                        [identity, _ERR, request.seq_id.encode(), str(result).encode()]
+                    )
+                else:
+                    self._sock.send_multipart(
+                        [identity, _SPEC, request.seq_id.encode(), self._enc.encode(result)]
+                    )
 
     def stop(self) -> None:
         self._stop.set()

@@ -27,6 +27,32 @@ import signal
 import sys
 
 
+def _vllm_engine(args):
+    print("draft server: constructing LLM...", flush=True)
+    from vllm import LLM
+
+    from dsdreal.draft.engine_vllm import VllmDraftEngine
+
+    llm = LLM(model=args.model, gpu_memory_utilization=args.gpu_frac,
+              enforce_eager=True, dtype=args.dtype, disable_log_stats=True,
+              max_model_len=args.max_model_len)
+    # First use of a shape/path JIT-compiles kernels (seconds, occasionally
+    # far more): do it before reporting ready, so the target's first rounds
+    # do not time out on it. Several batch sizes, then the same prompts again
+    # extended by a few tokens -- the prefix-cache-hit path every later
+    # round takes.
+    from vllm import SamplingParams
+    warm = SamplingParams(temperature=0.0, max_tokens=8)
+    for bs in (1, 8, 32):
+        prompts = [[1000 + 13 * i + j for j in range(96 + i)] for i in range(bs)]
+        llm.generate([{"prompt_token_ids": p} for p in prompts], warm, use_tqdm=False)
+        llm.generate([{"prompt_token_ids": p + [7, 8, 9]} for p in prompts], warm, use_tqdm=False)
+    print("draft server: LLM constructed, wiring VllmDraftEngine...", flush=True)
+    engine = VllmDraftEngine(llm, node_id=args.drafter_id)
+
+    return engine
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=os.environ.get("DSD_DRAFT_MODEL", "Qwen/Qwen3-0.6B"))
@@ -41,6 +67,14 @@ def main() -> int:
     ap.add_argument("--ready-file", default=None,
                      help="written with the bound address once serving starts")
     ap.add_argument("--gpu-frac", type=float, default=0.85)
+    ap.add_argument("--dtype", default="float32",
+                     help="float32 for the lossless gates; bfloat16 for timing runs")
+    ap.add_argument("--max-model-len", type=int, default=1024)
+    ap.add_argument("--kind", choices=("vllm", "eagle3"), default="vllm",
+                     help="vllm: an independent draft LM (--model); eagle3: a remote EAGLE3 "
+                          "head (--model = head checkpoint) fed the target's hidden states")
+    ap.add_argument("--eagle-target-model", default=os.environ.get("DSD_TARGET_MODEL"),
+                     help="eagle3: target checkpoint whose embed_tokens the head shares")
     args = ap.parse_args()
     if args.bind is None:
         args.bind = ("tcp://0.0.0.0:5560" if args.transport == "zmq"
@@ -52,17 +86,29 @@ def main() -> int:
     # share with a parent -- unlike the target side, multiprocessing here
     # would be fine, but there is nothing to gain from it for one small model.
     os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
+    # custom_class speculation runs on the V1 GPUModelRunner; keep the
+    # no-spec baseline and the drafter on the same runner so comparisons are
+    # like for like (V2 also needs UVA, which WSL lacks).
+    os.environ.setdefault("VLLM_USE_V2_MODEL_RUNNER", "0")
 
-    print("draft server: constructing LLM...", flush=True)
-    from vllm import LLM
+    # `kill -USR1 <pid>` dumps every thread's stack: the way to see where a
+    # drafter is stuck when the target only reports "no reply".
+    import faulthandler
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
 
-    from dsdreal.draft.engine_vllm import VllmDraftEngine
+    if args.kind == "eagle3":
+        import torch
 
-    llm = LLM(model=args.model, gpu_memory_utilization=args.gpu_frac,
-              enforce_eager=True, dtype="float32", disable_log_stats=True,
-              max_model_len=1024)
-    print("draft server: LLM constructed, wiring VllmDraftEngine...", flush=True)
-    engine = VllmDraftEngine(llm, node_id=args.drafter_id)
+        from dsdreal.draft.eagle3_model import load_eagle3_head
+        from dsdreal.draft.engine_eagle3 import Eagle3DraftEngine
+        if not args.eagle_target_model:
+            ap.error("--kind eagle3 needs --eagle-target-model (or DSD_TARGET_MODEL)")
+        print("draft server: loading EAGLE3 head...", flush=True)
+        head = load_eagle3_head(args.model, args.eagle_target_model,
+                                dtype=getattr(torch, args.dtype))
+        engine = Eagle3DraftEngine(head, node_id=args.drafter_id)
+    else:
+        engine = _vllm_engine(args)
     print(f"draft server: binding {args.transport} to {args.bind}...", flush=True)
     if args.transport == "zmq":
         from dsdreal.draft.server import DraftServer

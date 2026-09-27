@@ -25,6 +25,13 @@ class SpeculateRequest(msgspec.Struct, omit_defaults=True):
     num_confirmed: int = 0
     # Sent once, on the first request for a sequence.
     prompt_token_ids: list[int] | None = None
+    # EAGLE3 only: the target's aux hidden states for the positions confirmed
+    # since the last request (all prompt positions on the first one), row-major
+    # [n, hidden_dim], raw `hidden_dtype` bytes. After this request the
+    # drafter holds features for exactly num_confirmed - 1 positions.
+    hidden_states: bytes | None = None
+    hidden_dim: int = 0
+    hidden_dtype: str = ""
 
 
 class SpeculateReply(msgspec.Struct, omit_defaults=True):

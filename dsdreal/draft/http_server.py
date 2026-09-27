@@ -36,8 +36,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import msgspec
 
-from dsdreal.draft.base import DraftEngine
-from dsdreal.proto.messages import FreeSeq, SpeculateReply, SpeculateRequest
+from dsdreal.draft.base import DraftEngine, speculate_many
+from dsdreal.proto.messages import FreeSeq, SpeculateRequest
 
 _req_dec = msgspec.json.Decoder(list[SpeculateRequest])
 _free_dec = msgspec.json.Decoder(FreeSeq)
@@ -77,16 +77,14 @@ class _Handler(BaseHTTPRequestHandler):
 
         requests = _req_dec.decode(self._body())
         self.server.speculate_posts += 1  # type: ignore[attr-defined]
-        replies: list[SpeculateReply] = []
-        try:
-            for request in requests:
-                replies.append(self.engine.speculate(request))
-        except Exception as exc:  # noqa: BLE001 - must reach the client
+        results = speculate_many(self.engine, requests)
+        errors = [r for r in results if isinstance(r, Exception)]
+        if errors:
             # Same reason the ZMQ server has an ERR frame: a drafter-side
             # desync has to surface as a client-side raise, not a hang.
-            self._respond(400, _enc.encode({"error": str(exc)}))
+            self._respond(400, _enc.encode({"error": str(errors[0])}))
             return
-        self._respond(200, _enc.encode(replies))
+        self._respond(200, _enc.encode(results))
 
     def log_message(self, fmt: str, *args) -> None:
         pass  # stdlib logs every request to stderr; a per-step log is noise

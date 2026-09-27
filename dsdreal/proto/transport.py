@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 import msgspec
 import zmq
 
+from dsdreal.draft.base import speculate_many
 from dsdreal.netem.base import NetworkEmulator, block_for
 from dsdreal.netem.null import NullEmulator
 from dsdreal.proto.messages import FreeSeq, SpeculateReply, SpeculateRequest
@@ -102,7 +103,18 @@ class InProcessDraftClient(DraftClient):
                   for r in requests]
         block_for(max(out_ms) / 1000.0)
 
-        replies = [self._engine_for(r.drafter_id).speculate(r) for r in requests]
+        # Grouped per drafter so a batching engine (VllmDraftEngine) serves
+        # its share of the step in one forward, as it would behind a server.
+        groups: dict[str, list[int]] = {}
+        for i, r in enumerate(requests):
+            groups.setdefault(r.drafter_id, []).append(i)
+        replies: list[SpeculateReply] = [None] * len(requests)  # type: ignore[list-item]
+        for drafter_id, idx in groups.items():
+            results = speculate_many(self._engine_for(drafter_id), [requests[i] for i in idx])
+            for i, res in zip(idx, results):
+                if isinstance(res, Exception):
+                    raise res
+                replies[i] = res
 
         back_ms = [self.emulator.one_way_ms(r.drafter_id, self.node_id)
                    for r in requests]

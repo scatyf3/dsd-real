@@ -38,8 +38,8 @@ class VllmDraftEngine:
         self.state: dict[str, _SeqState] = {}
         self.calls = 0
 
-    def speculate(self, request: SpeculateRequest) -> SpeculateReply:
-        self.calls += 1
+    def _advance(self, request: SpeculateRequest) -> _SeqState:
+        """Adopt the target's confirmed tokens; raise on desync."""
         seq = self.state.get(request.seq_id)
         if seq is None:
             seq = _SeqState(confirmed=list(request.prompt_token_ids or []))
@@ -51,27 +51,58 @@ class VllmDraftEngine:
                 f"drafter desync on {request.seq_id}: local "
                 f"{len(seq.confirmed)} != target {request.num_confirmed}"
             )
+        return seq
 
-        if request.gamma <= 0:
-            return SpeculateReply(seq_id=request.seq_id, draft_tokens=[])
+    def speculate(self, request: SpeculateRequest) -> SpeculateReply:
+        (result,) = self.speculate_batch([request])
+        if isinstance(result, Exception):
+            raise result
+        return result
 
+    def speculate_batch(self, requests: list[SpeculateRequest]
+                        ) -> list[SpeculateReply | Exception]:
+        """One generate() over every sequence in the batch.
+
+        Per-sequence results come back in order; a desync on one sequence is
+        that sequence's error and does not fail the rest. Batching can shift
+        bf16 draft numerics (batch-dependent reductions), which only changes
+        *which* tokens get proposed -- the target's verify keeps the output
+        lossless either way.
+        """
         import time
 
         from vllm import SamplingParams
         from vllm.inputs import TokensPrompt
 
-        t0 = time.perf_counter()
-        (out,) = self.llm.generate(
-            [TokensPrompt(prompt_token_ids=seq.confirmed)],
-            SamplingParams(temperature=0.0, max_tokens=request.gamma),
-            use_tqdm=False,
-        )
-        tokens = list(out.outputs[0].token_ids)
-        return SpeculateReply(
-            seq_id=request.seq_id,
-            draft_tokens=tokens,
-            draft_ms=(time.perf_counter() - t0) * 1000.0,
-        )
+        self.calls += len(requests)
+        results: list[SpeculateReply | Exception | None] = [None] * len(requests)
+        prompts, params, rows = [], [], []
+        for i, request in enumerate(requests):
+            try:
+                seq = self._advance(request)
+            except Exception as exc:  # noqa: BLE001 - this sequence's error only
+                results[i] = exc
+                continue
+            if request.gamma <= 0:
+                results[i] = SpeculateReply(seq_id=request.seq_id, draft_tokens=[])
+                continue
+            prompts.append(TokensPrompt(prompt_token_ids=seq.confirmed))
+            params.append(SamplingParams(temperature=0.0, max_tokens=request.gamma))
+            rows.append(i)
+
+        if prompts:
+            t0 = time.perf_counter()
+            outs = self.llm.generate(prompts, params, use_tqdm=False)
+            # One forward per step serves all of them; each reply carries the
+            # batch's wall time, which is what that sequence actually waited.
+            draft_ms = (time.perf_counter() - t0) * 1000.0
+            for i, out in zip(rows, outs):
+                results[i] = SpeculateReply(
+                    seq_id=requests[i].seq_id,
+                    draft_tokens=list(out.outputs[0].token_ids),
+                    draft_ms=draft_ms,
+                )
+        return results  # type: ignore[return-value]
 
     def free(self, seq_ids: list[str]) -> None:
         for sid in seq_ids:

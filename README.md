@@ -150,7 +150,7 @@ vLLM 0.21.0 上的结果，平台已经换到 0.27.1 / L40S 并重跑，最新�
 source scripts/env.sh          # 任何入口都要先 source
 
 # 1. 纯 CPU：传输层 + proposer + 路由的全部测试，无 GPU、无模型、秒级
-pytest tests -q                # 64 passed
+pytest tests -q                # 97 passed (torch 可选：EAGLE3 引擎测试需要)
 
 # 2. 需要 GPU
 python scripts/verify_vllm_hooks.py            # Stage 0 七探针（--probe k1 可单跑）
@@ -201,12 +201,15 @@ target = LLM(
 dsdreal/
 ├── proto/      messages.py（msgspec，JSON 和 msgpack 都能出）
 │               transport.py（DraftClient + InProcess / Zmq / Http 三种实现）
-├── draft/      base.py  engine_echo.py（无 GPU）  engine_vllm.py（真模型）
+├── draft/      base.py  engine_echo.py（无 GPU）  engine_vllm.py（真模型，批量 generate）
+│               eagle3_model.py  engine_eagle3.py（远程 EAGLE3 head）
 │               engine_replay.py（回放）  server.py（ZMQ）  http_server.py（HTTP）
-├── target/     proposer.py（custom_class）  plugin.py（entry point）
-├── policy/     routing.py（RoundRobin）
+├── target/     proposer.py（custom_class）  hidden_states.py（K8）  plugin.py（entry point）
+├── policy/     routing.py（drafter RR；target RR/Random/JSQ）  window.py（SpecDec++）
 ├── netem/      base.py  null.py  sleep.py（RTT/jitter/延迟矩阵）
-├── router/ metrics/ config/ workload/ experiments/   ← 空包，Stage 3 起填
+├── router/     target_server.py  frontend.py（N:M）
+├── metrics/    records.py  collector.py  export.py
+├── workload/   trace.py        experiments/  driver.py
 scripts/        env.sh  verify_*.py  slurm_*.sbatch  run_draft_server.py
 tests/          test_transport.py  test_zmq_transport.py  test_http_transport.py
                 test_transport_parity.py  test_remote_draft_proposer.py  test_routing.py
@@ -214,13 +217,32 @@ docs/           stage0-findings.md
 plan.md         完整设计：架构、指标对齐、分阶段、终止判据
 ```
 
-## 下一步（Stage 3）
+## Table 3（小规模）：Vanilla SD / SpecDec++ / EAGLE3 × N 个 drafter
 
-多 draft 对 1 target：`router/` 前端、更多 routing 策略（Random / JSQ）、
-`metrics/` 收集与导出。指标对齐是最大的风险点，`plan.md` 第五节已经把每个指标的定义和
-对齐陷阱写死了 —— 尤其 TTFT 必须从 router 入口打戳（vLLM 自己的 `arrival_time`
-从 engine-core 准入起算，会漏掉 routing 和排队），以及 acceptance ratio
-不含 bonus token（vLLM 的 `mean_acceptance_length` 含）。
+计划与进度见 [docs/table3-plan.md](docs/table3-plan.md)，**结果（真机 Table 3、门禁、real vs sim、n:m）见 [docs/table3-results.md](docs/table3-results.md)**。在线实验的链路：
 
-HTTP 传输目前只在 loopback 上验过，**上真 GPU 跑一遍 RTT 扫描**、和 ZMQ 对比
-`net_excess_ms`，是 Stage 3 顺带要做的事。
+```
+trace (dsdSim gsm8k, Poisson 到达) ─► experiments/driver.py ─► 进程内 LLMEngine（target）
+                                         │  每 step propose() ─► N 个 draft server（ZMQ）
+                                         └► metrics/collector.py ─► dsd_metrics.json / steps.jsonl / actual_run.jsonl
+```
+
+| 模块 | 作用 |
+|---|---|
+| [experiments/driver.py](dsdreal/experiments/driver.py) | 按到达时间 `add_request`、逐 step 打 token 时间戳（不用 AsyncLLM：它把 engine 放到别的进程，proposer 的模块全局配置就丢了） |
+| [metrics/collector.py](dsdreal/metrics/collector.py) | 每轮 accepted 由下一轮的 `num_confirmed` 增量推出；**两套口径**并列：标准口径 vs dsdSim 口径（无 bonus、TTFT 到首个有接受的轮、TPOT 按 token 汇总） |
+| [workload/trace.py](dsdreal/workload/trace.py) | dsdSim trace（`data/dsdsim/`，MIT）→ 长度精确的 prompt；`--chat-template` 保持总长不变 |
+| [policy/window.py](dsdreal/policy/window.py) | SpecDec++：逐行移植 sim 的 `SpecPPGammaPolicy`，逐位置接受概率来自真机标定 |
+| [target/hidden_states.py](dsdreal/target/hidden_states.py) | K8：让 custom_class proposer 拿到 target 的 EAGLE3 aux hidden states（按新确认位置切片） |
+| [draft/eagle3_model.py](dsdreal/draft/eagle3_model.py) / [engine_eagle3.py](dsdreal/draft/engine_eagle3.py) | 远程 EAGLE3 head（移植自 vLLM llama_eagle3）：KV 回退 + reprefill + 链式 draft，批处理 |
+| [router/](dsdreal/router/) | N:M：target server 进程 + router frontend（RR / Random / JSQ，TTFT 从 router 入口算） |
+| [sim/](sim/) | 让 dsdSim 在同样配置下跑（缺 VIDUR 用标定文件替代），`calibrate_from_run.py` 从真机 run 拟合延迟 |
+
+门禁（都已在本地小模型上过，remote 上用 Llama-3.1-8B / 3.2-1B 复跑）：
+
+- **Step A**：在线负载下 fp32，spec 输出 == 无 draft baseline（`scripts/compare_outputs.py`）；记账 `Σ(accepted+1)` 与输出长度自洽。
+- **Step C**：每请求 γ ∈ [2, 8] 且等于 policy 输出，仍无损。
+- **Step D**：K8 对齐（与 HF 参考逐位置 cos ≥ 0.98，且明显高于错一位）；远程 EAGLE3 接受长度与 vLLM 原生 `method=eagle3` 相差 ≤ 5%（本地：1.970 vs 1.973）；fp32 无损（本地 30/30 通过）。
+
+remote（NYULAB，只用空闲卡、最多 3 张）一键：`nohup scripts/run_all_nyulab.sh > runs/pipeline.log 2>&1 &`，
+进度在 `runs/pipeline.status`，结果表在 `runs/table3/table3.md`。
