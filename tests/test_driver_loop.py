@@ -175,3 +175,32 @@ def test_slot_reuse_with_longer_new_prompt_is_a_new_request():
                              clock=clock, sleep=clock.sleep)
     per = {m.request_id: m for m in collect(reqs, rounds)}
     assert per["long"].rounds and per["long"].accounting_ok, per["long"].notes
+
+
+def test_client_side_links_shift_ttft_not_tpot(monkeypatch):
+    """dsdSim's scenario: the prompt pays an uplink before admission, every
+    token a downlink before the client sees it. TTFT (both conventions) grows
+    by exactly up + down; TPOT and the accounting do not change."""
+    def run(up, down):
+        clock = _Clock()
+        # round timestamps come from the transport's perf_counter: put it on
+        # the same fake clock, as the real system shares one clock
+        import dsdreal.proto.transport as transport
+        monkeypatch.setattr(transport.time, "perf_counter", lambda: clock.t / 1000.0)
+        rounds: list[RoundRecord] = []
+        proposer.configure(InProcessDraftClient(EchoDraftEngine("d0")), rounds=rounds)
+        engine = _FakeSpecEngine(clock, slots=1, gamma=3)
+        items = _items(1, prompt_len=5, out_len=12, gap_ms=0.0)
+        _, reqs = run_open_loop(engine, items, lambda w: w.max_tokens, clock=clock,
+                                sleep=clock.sleep, uplink_ms=up, downlink_ms=down)
+        (m,) = collect(reqs, rounds)
+        proposer.configure(None)
+        return m
+
+    base, edge = run(0.0, 0.0), run(5.0, 5.0)
+    assert edge.accounting_ok and base.accounting_ok
+    assert edge.ttft_ms == pytest.approx(base.ttft_ms + 10.0)
+    assert edge.ttft_sim_ms == pytest.approx(base.ttft_sim_ms + 10.0)
+    assert edge.e2e_ms == pytest.approx(base.e2e_ms + 10.0)
+    assert edge.tpot_ms == pytest.approx(base.tpot_ms)
+    assert edge.tpot_sim_ms == pytest.approx(base.tpot_sim_ms)

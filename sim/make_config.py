@@ -168,6 +168,7 @@ def build(args) -> tuple[dict, list[dict]]:
         "_dsdreal": {
             "method": args.method, "n_drafters": n, "n_requests": n_req, "per_draft_rps": args.per_draft_rps,
             "total_rate_rps": rate, "rtt_ms": args.rtt_ms, "seed": args.seed, "mode": args.mode,
+            "client_side": args.client_side,
             "trace_source": str(trace_src), "calibration": str(Path(args.calibration).resolve()),
             "draft_profile": draft_kind, "target_tokens_scale": args.target_tokens_scale,
             "acceptance": ("fixed:%s" % args.acceptance_fixed_rate if args.acceptance_fixed_rate is not None
@@ -230,6 +231,8 @@ def parse(argv=None):
                     help="multiply every trace target_tokens (dsdSim runs ceil(target/gamma) rounds; "
                          "gamma/L_real makes its round count match a real run with mean acceptance length L_real)")
     ap.add_argument("--max-num-seqs", type=int, default=64)
+    ap.add_argument("--client-side", action="store_true",
+                    help="requests born at the drafters' clients (dsdSim's own scenario); see run_sim.py")
     ap.add_argument("--tail-ms", type=float, default=600_000.0,
                     help="sim horizon after the last arrival (must cover the slowest request)")
     ap.add_argument("--trace", default=None, help="default $DSDSIM_ROOT/traces/gsm8k_trace_master.jsonl")

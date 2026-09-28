@@ -45,25 +45,32 @@ def run_open_loop(engine: Engine, items: list[WorkItem],
                   make_params: Callable[[WorkItem], object],
                   clock: Callable[[], float] = now_ms,
                   sleep: Callable[[float], None] = time.sleep,
+                  uplink_ms: float = 0.0, downlink_ms: float = 0.0,
                   ) -> tuple[float, list[RequestRecord]]:
-    """Returns (t0_ms, records). Outputs are read as CUMULATIVE token lists."""
+    """Returns (t0_ms, records). Outputs are read as CUMULATIVE token lists.
+
+    uplink_ms / downlink_ms model dsdSim's scenario, where a request is born
+    at its drafter's client: it is admitted uplink_ms after its (client-side)
+    arrival, and its tokens are stamped downlink_ms after the target emitted
+    them. Both are pure delays, as dsdSim's links are."""
     items = sorted(items, key=lambda w: w.arrival_ms)
     records: dict[str, RequestRecord] = {}
     t0 = clock()
     i = 0
     while i < len(items) or engine.has_unfinished_requests():
         now = clock()
-        while i < len(items) and t0 + items[i].arrival_ms <= now:
+        while i < len(items) and t0 + items[i].arrival_ms + uplink_ms <= now:
             w = items[i]
             records[w.request_id] = RequestRecord(
                 request_id=w.request_id, arrival_ms=t0 + w.arrival_ms,
-                prompt_token_ids=list(w.prompt_token_ids), max_tokens=w.max_tokens)
+                prompt_token_ids=list(w.prompt_token_ids), max_tokens=w.max_tokens,
+                uplink_ms=uplink_ms, downlink_ms=downlink_ms)
             engine.add_request(w.request_id, {"prompt_token_ids": list(w.prompt_token_ids)},
                                make_params(w))
             i += 1
         if engine.has_unfinished_requests():
             outs = engine.step()
-            ts = clock()
+            ts = clock() + downlink_ms
             for o in outs:
                 rec = records[o.request_id]
                 toks = o.outputs[0].token_ids
@@ -74,7 +81,7 @@ def run_open_loop(engine: Engine, items: list[WorkItem],
                 if o.finished and rec.finish_ms is None:
                     rec.finish_ms = ts
         elif i < len(items):
-            sleep(max(0.0, (t0 + items[i].arrival_ms - clock()) / 1000.0))
+            sleep(max(0.0, (t0 + items[i].arrival_ms + uplink_ms - clock()) / 1000.0))
     return t0, list(records.values())
 
 
@@ -132,6 +139,9 @@ def add_workload_args(ap: argparse.ArgumentParser) -> None:
                     help="Poisson load = per_draft_rps * N drafters; default: trace arrivals")
     ap.add_argument("--rate-rps", type=float, default=None, help="total Poisson load (overrides)")
     ap.add_argument("--max-output-tokens", type=int, default=None)
+    ap.add_argument("--client-side", action="store_true",
+                    help="dsdSim's scenario: requests are born at the drafters' clients, so the "
+                         "prompt pays an uplink and every token a downlink of rtt/2 each")
     ap.add_argument("--chat-template", action="store_true",
                     help="wrap prompts in the target tokenizer's chat template (same length)")
 
@@ -295,7 +305,9 @@ def main(argv: list[str] | None = None) -> int:
     target = build_target(args, ap.error)
     items, rate = build_workload(args, target.n_drafters)
     warmup(target, args.warmup)
-    t0, reqs = run_open_loop(target.engine, items, target.make_params)
+    link = args.rtt_ms / 2.0 if args.client_side else 0.0
+    t0, reqs = run_open_loop(target.engine, items, target.make_params,
+                             uplink_ms=link, downlink_ms=link)
     per_request = collect(reqs, target.rounds)
     config = {k: v for k, v in vars(args).items()}
     config.update(n_drafters=target.n_drafters, rate_rps=rate, drafters=target.addresses)

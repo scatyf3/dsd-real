@@ -43,6 +43,12 @@ class RequestRecord:
     token_ts_ms: list[float] = field(default_factory=list)  # one per output token
     finish_ms: float | None = None
     output_token_ids: list[int] = field(default_factory=list)
+    # Client-side scenario (dsdSim's): the request is born at the drafter's
+    # client, reaches the target `uplink_ms` later, and every token reaches
+    # the client `downlink_ms` after the target produced it. token_ts_ms and
+    # finish_ms are client-side times; round timestamps stay target-side.
+    uplink_ms: float = 0.0
+    downlink_ms: float = 0.0
 
     @property
     def prompt_len(self) -> int:

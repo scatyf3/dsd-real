@@ -12,6 +12,11 @@ cd "$(dirname "$0")/.."
 source scripts/env_nyulab.sh
 OUT=${1:-runs/table3}; METHODS=${2:-vanilla specpp}; NS=${3:-1 2 4 7}
 PER_DRAFT_RPS=${PER_DRAFT_RPS:-1.0}; RTT_MS=${RTT_MS:-10}; GAMMA=${GAMMA:-4}
+# client: dsdSim's scenario -- requests are born at the drafters' clients
+# (prompt uplink + token downlink of RTT/2 each); datacenter: they arrive at
+# the target.
+SCENARIO=${SCENARIO:-client}
+scen_args=(); [ "$SCENARIO" = client ] && scen_args=(--client-side)
 mkdir -p "$OUT"
 # Shared box: GPUs are re-checked before every run (another user's job can
 # come back mid-sweep -- seen on NYULAB), and after every run we record
@@ -31,7 +36,7 @@ pick_gpus
 echo "target GPU $T, draft GPUs $D1,$D2 -> $OUT (per_draft_rps=$PER_DRAFT_RPS rtt=$RTT_MS)"
 common() {  # N
     local n=$1 nreq=$(( 120 * $1 )); (( nreq > 400 )) && nreq=400
-    echo --n-requests $nreq --per-draft-rps "$PER_DRAFT_RPS" --rtt-ms "$RTT_MS" --chat-template --no-prefix-caching
+    echo --n-requests $nreq --per-draft-rps "$PER_DRAFT_RPS" --rtt-ms "$RTT_MS" --chat-template --no-prefix-caching "${scen_args[@]}"
 }
 
 if [[ " $METHODS " == *" specpp "* ]] && [ ! -f "$OUT/calib_g8/profile.json" ]; then

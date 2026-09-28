@@ -73,8 +73,21 @@ def run(config: Path, log_path: Path | None, dsdsim_root: str | None) -> dict:
             "rounds": len(decode_jobs.get(c["id"], [])),
         })
 
+    # Client-side scenario in lockstep mode: lockstep zeroes the links and
+    # charges RTT inside target steps, which drops the two hops a client-born
+    # request pays outside any step -- prompt upload and first-token return.
+    # Links here are pure delays (no bandwidth term, no link queueing) and
+    # arrivals are open-loop, so those hops shift every request by exactly
+    # rtt/2 each way: TTFT and end-to-end latency grow by rtt_ms, TPOT and
+    # throughput are unchanged. (Async mode simulates the hops itself.)
+    offset = (float(meta.get("rtt_ms", 0.0))
+              if meta.get("client_side") and meta.get("mode") == "lockstep" else 0.0)
+    if offset:
+        for r in requests:
+            r["ttft_ms"] = None if r["ttft_ms"] is None else r["ttft_ms"] + offset
+            r["total_latency_ms"] += offset
     table = {
-        "ttft_mean_ms": mj.get("ttft_avg_ms"),
+        "ttft_mean_ms": (mj.get("ttft_avg_ms") or 0.0) + offset if mj.get("ttft_avg_ms") is not None else None,
         "tpot_pooled_ms": mj.get("tpot_avg_ms"),
         "throughput_rps": mj.get("conversation_throughput_rps"),
         "acceptance_ratio": mj.get("acceptance_rate"),
@@ -98,6 +111,7 @@ def run(config: Path, log_path: Path | None, dsdsim_root: str | None) -> dict:
         "ttft_p50_ms": mj.get("ttft_p50_ms"), "ttft_p95_ms": mj.get("ttft_p95_ms"),
         "tpot_p50_ms": mj.get("tpot_p50_ms"), "tpot_p95_ms": mj.get("tpot_p95_ms"),
         "sim_wall_s": wall_s,
+        "client_side_ttft_offset_ms": offset,
     }
     for k, v in mj.items():
         if k.startswith("ttft_breakdown_") or k.startswith("decode_breakdown_"):

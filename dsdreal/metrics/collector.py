@@ -146,7 +146,7 @@ def request_metrics(req: RequestRecord, recs: list[RoundRecord]) -> RequestMetri
             t_end = nxt.t_send_ms
         else:
             delta = final_len - rec.num_confirmed
-            t_end = finish
+            t_end = finish - req.downlink_ms   # rounds are target-side times
             if delta <= 0:
                 # Drafted for on the step the request finished: never
                 # verified. Negative when that final verify accepted past
@@ -172,7 +172,7 @@ def request_metrics(req: RequestRecord, recs: list[RoundRecord]) -> RequestMetri
     for r in m.rounds:
         if r.accepted > 0:
             if math.isnan(m.ttft_sim_ms):
-                m.ttft_sim_ms = r.t_end_ms - req.arrival_ms
+                m.ttft_sim_ms = r.t_end_ms + req.downlink_ms - req.arrival_ms
             m.tpot_sim_num_ms += r.dur_ms
             m.tpot_sim_den += r.accepted
     return m

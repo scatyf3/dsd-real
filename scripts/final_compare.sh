@@ -92,12 +92,14 @@ print(round(sum(g) / len(g) / (sum(L) / len(L)), 3))
 EOF
 }
 simname() { case $1 in eagle3) echo eagle3_chain ;; *) echo "$1" ;; esac; }
+# same scenario on the sim side as the real runs used
+scen=$($PY -c "import json,sys; print('--client-side' if json.load(open(sys.argv[1]))['config'].get('client_side') else '')" "$OUT/vanilla_N1/dsd_metrics.json")
 
 for m in "${methods[@]}"; do
     sc=$(scale "$m")
     $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "1 2 4 7" --calibration "$(calfor "$m")" \
         --acceptance-profile "$(proffor "$m")" --mode lockstep --target-tokens-scale "$sc" \
-        --out "$OUT/sim_pooled" --python "$SIMPY" --jobs 8 --force -- --trace "$TRACE" > /dev/null
+        --out "$OUT/sim_pooled" --python "$SIMPY" --jobs 8 --force -- --trace "$TRACE" $scen > /dev/null
     for n in 1 2 4 7; do
         [ -f "$OUT/${m}_N$n/steps.jsonl" ] || continue
         kind=$m; [ "$m" = eagle3 ] && kind=eagle; [ "$m" = vanilla ] && kind=vanilla
@@ -112,7 +114,7 @@ json.dump(tier, open(sys.argv[2], "w"), indent=2)
 EOF
         $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "$n" --calibration "$tc" \
             --acceptance-profile "$(proffor "$m")" --mode lockstep --target-tokens-scale "$sc" \
-            --out "$OUT/sim_tiered" --python "$SIMPY" --jobs 8 --force -- --trace "$TRACE" > /dev/null
+            --out "$OUT/sim_tiered" --python "$SIMPY" --jobs 8 --force -- --trace "$TRACE" $scen > /dev/null
     done
 done
 $PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_pooled" | tee "$OUT/real_vs_sim_pooled.md"
