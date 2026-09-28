@@ -84,6 +84,7 @@ def load_sim(root: Optional[str] = None):
 
     _patch_provider_factory(sim)
     _patch_batch_latency(sim)
+    _patch_serve_loop_tail(sim)
     _patch_acceptance_loader(sim)
     _patch_acceptance_profile(sim)
     _SIM = sim
@@ -195,16 +196,57 @@ def _patch_batch_latency(sim) -> None:
             return None
         combine = str(calib.get("target", {}).get("mixed_batch_combine", "max")).lower()
         lat = sum(parts) if combine == "sum" else max(parts)
-        # Only a batch that verifies drafts waits on drafting. In vLLM the
-        # propose() after a prefill-only step is the new request's first-round
-        # draft, which dsdSim charges on that request's first decode batch --
-        # charging it on the prefill batch too counted it twice (~RTT + one
-        # draft, which alone made the lockstep sim's TTFT ~30-40 ms high).
-        if calib.get("mode") == "lockstep" and any(j.job_type != "prefill" for j in batch):
-            lat += lockstep_extra_ms(calib, batch, self.cfg.gamma)
+        # Lockstep: a vLLM step is [forward: verify + prefill] then [propose:
+        # draft + RTT for every running request]. The drafting is a *tail*
+        # after the forward -- the batch's jobs are done when the forward ends
+        # (see _patch_serve_loop_tail) and the target stays busy for the tail.
+        # Charging it as a head instead made a request whose prefill joined a
+        # batch wait for other requests' drafting, then pay its own first
+        # draft again (~one draft + RTT too much TTFT). Prefill-only batches
+        # get the tail too: that propose is the new request's first draft.
+        self._dsd_tail_ms = 0.0
+        if calib.get("mode") == "lockstep":
+            self._dsd_tail_ms = lockstep_extra_ms(calib, batch, self.cfg.gamma)
+            lat += self._dsd_tail_ms
         return lat
 
     TargetServer._estimate_batch_latency_from_provider = patched
+
+
+def _patch_serve_loop_tail(sim) -> None:
+    """TargetServer._serve_loop with the lockstep drafting tail after job
+    completion: wait (batch latency - tail), complete the batch's jobs, then
+    keep holding the server for the tail before taking the next batch.
+
+    Done by rewriting two lines of dsdSim's own loop (each asserted to occur
+    exactly once), so the rest of its batching logic is untouched. A no-op
+    when the tail is 0 (async mode)."""
+    import inspect
+    import textwrap
+
+    lines = textwrap.dedent(inspect.getsource(sim.TargetServer._serve_loop)).split("\n")
+
+    def at(pred, what):
+        hits = [i for i, l in enumerate(lines) if pred(l.strip())]
+        if len(hits) != 1:
+            raise RuntimeError(f"dsdSim _serve_loop changed, cannot patch ({what}): {hits}")
+        i = hits[0]
+        return i, lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+
+    # 1. the batch sleep -> sleep only through the forward
+    i, ind = at(lambda l: l.startswith("yield self.env.timeout(batch_latency)"), "batch sleep")
+    lines[i:i + 1] = [ind + "_tail = getattr(self, '_dsd_tail_ms', 0.0) or 0.0",
+                      ind + "yield self.env.timeout(max(0.0, batch_latency - _tail))"]
+    # 2. after the completion loop (still inside `with server.request()`) -> hold for the tail
+    i, ind = at(lambda l: l.startswith("if self.router and hasattr(self.router, 'mark_idle')"), "post-batch")
+    lines[i:i] = [ind + "if _tail > 0:",
+                  ind + "    yield self.env.timeout(_tail)",
+                  ind + "    self.busy_ms += _tail"]
+
+    ns: Dict[str, Any] = {}
+    exec(compile("\n".join(lines), "<dsdsim _serve_loop + lockstep tail>", "exec"), vars(sim), ns)
+    sim.TargetServer._serve_loop = ns["_serve_loop"]
+    sim.TargetServer._dsd_patched_serve_loop_src = "\n".join(lines)
 
 
 def lockstep_extra_ms(calib: Mapping[str, Any], batch, default_gamma: int) -> float:
