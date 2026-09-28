@@ -14,8 +14,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=${1:-runs/table3_final}
-SCR=${SIM_SCRATCH:-/tmp/claude-1000/-home-scatyf3-dsd-real/296ff36d-0e9c-405f-8fa4-47eb7d19d1d3/scratchpad}
-SIMPY=${SIMPY:-$SCR/simvenv/bin/python}
+SCR=${SIM_ROOT:-$(pwd)/.sim}
+SIMPY=${SIMPY:-$SCR/venv/bin/python}
 export DSDSIM_ROOT=${DSDSIM_ROOT:-$SCR/dsdSim}
 PY=${PY:-.venv/bin/python}
 mkdir -p "$OUT"

@@ -195,7 +195,12 @@ def _patch_batch_latency(sim) -> None:
             return None
         combine = str(calib.get("target", {}).get("mixed_batch_combine", "max")).lower()
         lat = sum(parts) if combine == "sum" else max(parts)
-        if calib.get("mode") == "lockstep":
+        # Only a batch that verifies drafts waits on drafting. In vLLM the
+        # propose() after a prefill-only step is the new request's first-round
+        # draft, which dsdSim charges on that request's first decode batch --
+        # charging it on the prefill batch too counted it twice (~RTT + one
+        # draft, which alone made the lockstep sim's TTFT ~30-40 ms high).
+        if calib.get("mode") == "lockstep" and any(j.job_type != "prefill" for j in batch):
             lat += lockstep_extra_ms(calib, batch, self.cfg.gamma)
         return lat
 

@@ -16,3 +16,6 @@ runs/*
 # Placeholder-calibrated sim sweeps (sim/run_sweep.py default output); the
 # measured comparison lives in results/table3_final/.
 sim/results/
+
+# dsdSim clone + its venv for sim/ (scripts/final_compare.sh)
+.sim/
