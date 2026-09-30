@@ -87,6 +87,7 @@ def load_sim(root: Optional[str] = None):
     _patch_serve_loop_tail(sim)
     _patch_acceptance_loader(sim)
     _patch_acceptance_profile(sim)
+    _patch_acceptance_replay(sim)
     _SIM = sim
     return sim
 
@@ -307,6 +308,66 @@ def _patch_acceptance_profile(sim) -> None:
         return sum(probs) / len(probs), probs
 
     DraftServer._lookup_acceptance = patched
+
+
+_REPLAY_CACHE: Dict[str, Any] = {}
+
+
+def _patch_acceptance_replay(sim) -> None:
+    """Optional: `speculation.acceptance.dsdreal_replay: <replay.json>`
+    ({draft_device_id: {"gamma": g, "accepted": [a_0, a_1, ...]}}, written by
+    make_config.py --replay-from <real run>).
+
+    Replays a real run's token events instead of sampling acceptance -- the
+    paper's acceptance_seq replay, fed from our own steps.jsonl. make_config
+    gives every request its own virtual drafter, so the drafter id is the
+    sequence: its conversation uses the recorded gamma, and its k-th
+    verification accepts exactly the recorded a_k drafts (no bonus, dsdSim's
+    convention). The trace sets answer = rounds * gamma, so dsdSim's
+    ceil(answer / gamma) loop runs exactly the recorded rounds.
+    """
+    import json
+
+    DraftServer = sim.DraftServer
+    base_policy = sim.ConstantGammaPolicy
+    native_verify = DraftServer._simulate_verification
+    native_init = DraftServer.__init__
+
+    def table(self):
+        path = (self.cfg.acceptance_config or {}).get("dsdreal_replay")
+        if not path:
+            return None
+        t = _REPLAY_CACHE.get(path)
+        if t is None:
+            t = _REPLAY_CACHE[path] = json.loads(Path(path).read_text())
+        return t.get(self.id)
+
+    class ReplayGamma(base_policy):
+        def __init__(self, gamma: int) -> None:
+            super().__init__(gamma)
+
+    def __init__(self, *args, **kwargs):
+        native_init(self, *args, **kwargs)
+        rp = table(self)
+        self._dsd_replay_round = 0
+        if rp is not None:
+            self._gamma_policy = ReplayGamma(int(rp["gamma"]))
+            self.gamma = int(rp["gamma"])
+
+    def verify(self, tokens, conn, context_length):
+        rp = table(self)
+        if rp is None:
+            return native_verify(self, tokens, conn, context_length)
+        k = self._dsd_replay_round
+        self._dsd_replay_round += 1
+        tokens = max(0, int(tokens))
+        acc = rp["accepted"][k] if k < len(rp["accepted"]) else 0
+        acc = max(0, min(int(acc), tokens))
+        return sim.VerifyResult(chunk_id=self.chunks_sent, accepted_tokens=acc,
+                                rejected_tokens=tokens - acc, total_tokens=tokens)
+
+    DraftServer.__init__ = __init__
+    DraftServer._simulate_verification = verify
 
 
 def _patch_acceptance_loader(sim) -> None:

@@ -10,7 +10,8 @@
 #    drafter, cannot express; per-N draft calibration is the tier-aware variant);
 # 3. sim sweeps (lockstep: our target step blocks on drafting) with the measured
 #    per-position acceptance profile and round counts aligned (γ/L̄ output scale);
-# 4. real_vs_sim_pooled.md and real_vs_sim_tiered.md.
+# 4. real_vs_sim_{pooled,tiered,replay}.md -- replay = tiered latency plus the
+#    real run's own per-round acceptance (sim/make_config.py --replay-from).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=${1:-runs/table3_final}
@@ -115,8 +116,16 @@ EOF
         $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "$n" --calibration "$tc" \
             --acceptance-profile "$(proffor "$m")" --mode lockstep --target-tokens-scale "$sc" \
             --out "$OUT/sim_tiered" --python "$SIMPY" --jobs 8 --force -- --trace "$TRACE" $scen > /dev/null
+        # same, but acceptance replayed from this very run's token events:
+        # identical gamma and per-round accepted counts, so what is left of
+        # the error is the simulator's system model alone
+        $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "$n" --calibration "$tc" \
+            --mode lockstep --out "$OUT/sim_replay" --python "$SIMPY" --jobs 8 --force \
+            -- --trace "$TRACE" $scen --replay-from "$OUT/${m}_N$n" > /dev/null
     done
 done
 $PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_pooled" | tee "$OUT/real_vs_sim_pooled.md"
 echo
 $PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_tiered" | tee "$OUT/real_vs_sim_tiered.md"
+echo
+$PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_replay" | tee "$OUT/real_vs_sim_replay.md"

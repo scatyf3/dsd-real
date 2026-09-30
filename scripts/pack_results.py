@@ -16,7 +16,7 @@ import sys
 
 def main(src: str, dst: str) -> int:
     os.makedirs(dst, exist_ok=True)
-    for f in ("table3.md", "deployment.md", "real_vs_sim_pooled.md", "real_vs_sim_tiered.md",
+    for f in ("table3.md", "deployment.md", "real_vs_sim_pooled.md", "real_vs_sim_tiered.md", "real_vs_sim_replay.md",
               "calibration.pooled.json", "calibration.eagle.json", "calibration.pooled.fit.json",
               "calibration.eagle.fit.json", "eagle3_profile.json"):
         if os.path.exists(f"{src}/{f}"):
@@ -38,7 +38,7 @@ def main(src: str, dst: str) -> int:
         real[os.path.basename(run)] = entry
     json.dump(real, open(f"{dst}/real_system_metrics.json", "w"), indent=1)
     sim = {}
-    for variant in ("sim_pooled", "sim_tiered"):
+    for variant in ("sim_pooled", "sim_tiered", "sim_replay"):
         for p in sorted(glob.glob(f"{src}/{variant}/*_N*.json")):
             d = json.load(open(p))
             sim.setdefault(variant, {})[os.path.basename(p)[:-5]] = {

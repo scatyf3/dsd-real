@@ -57,6 +57,22 @@ def default_n_requests(n: int) -> int:
     return min(400, 120 * n)
 
 
+def load_replay(run_dir: str | Path) -> dict[str, dict]:
+    """request_id -> {"gamma": int, "accepted": [per verified round]} from a
+    real dsd-real run (steps.jsonl: one row per verified round, `i` = round
+    index, accepted excludes the bonus token -- dsdSim's own convention)."""
+    per: dict[str, list[tuple[int, int, int]]] = {}
+    for line in (Path(run_dir) / "steps.jsonl").read_text().split("\n"):
+        if line.strip():
+            d = json.loads(line)
+            per.setdefault(d["request_id"], []).append((int(d["i"]), int(d["gamma"]), int(d["accepted"])))
+    out = {}
+    for rid, rounds in per.items():
+        rounds.sort()
+        out[rid] = {"gamma": rounds[0][1], "accepted": [a for _, _, a in rounds]}
+    return out
+
+
 def build(args) -> tuple[dict, list[dict]]:
     root = Path(args.dsdsim_root or os.environ.get("DSDSIM_ROOT", "")).resolve()
     calib_all = json.loads(Path(args.calibration).read_text())
@@ -69,14 +85,24 @@ def build(args) -> tuple[dict, list[dict]]:
     rate = args.per_draft_rps * n
     arrivals = poisson_arrivals(len(rows), rate, args.seed)
 
+    replay = load_replay(args.replay_from) if args.replay_from else {}
+    replay_by_draft: dict[str, dict] = {}
     trace = []
     for i, (r, t) in enumerate(zip(rows, arrivals)):
+        rid, did = str(r["request_id"]), f"d{i % n}_r{i:04d}"
+        target = max(1, round(int(r["target_tokens"]) * args.target_tokens_scale))
+        if rid in replay:
+            # dsdSim runs ceil(answer / gamma) rounds per conversation: make
+            # that exactly the real run's number of verified rounds.
+            rp = replay[rid]
+            target = len(rp["accepted"]) * rp["gamma"]
+            replay_by_draft[did] = rp
         trace.append({
-            "request_id": str(r["request_id"]),
+            "request_id": rid,
             "arrival_ms": round(t, 6),
             "prompt_tokens": int(r["prompt_tokens"]),
-            "target_tokens": max(1, round(int(r["target_tokens"]) * args.target_tokens_scale)),
-            "draft_id": f"d{i % n}_r{i:04d}",
+            "target_tokens": target,
+            "draft_id": did,
             "device_tier": "default",
         })
 
@@ -146,6 +172,13 @@ def build(args) -> tuple[dict, list[dict]]:
         # joblib stays loaded (DraftServer requires a model object); the shim
         # answers every lookup from the measured profile instead.
         spec["acceptance"]["dsdreal_profile"] = str(Path(args.acceptance_profile).resolve())
+    if replay_by_draft:
+        # every conversation replays its real gamma and per-round accepted
+        # counts (the shim; one virtual drafter per request = one sequence)
+        rp_path = Path(args.out_dir).resolve() / "replay.json"
+        rp_path.parent.mkdir(parents=True, exist_ok=True)
+        rp_path.write_text(json.dumps(replay_by_draft))
+        spec["acceptance"]["dsdreal_replay"] = str(rp_path)
     if args.acceptance_fixed_rate is not None:
         spec["acceptance"] = {"disable_model": True, "default_rate": args.acceptance_fixed_rate}
     if args.method == "specpp":
@@ -171,6 +204,7 @@ def build(args) -> tuple[dict, list[dict]]:
             "client_side": args.client_side,
             "trace_source": str(trace_src), "calibration": str(Path(args.calibration).resolve()),
             "draft_profile": draft_kind, "target_tokens_scale": args.target_tokens_scale,
+            "replay_from": str(Path(args.replay_from).resolve()) if args.replay_from else None,
             "acceptance": ("fixed:%s" % args.acceptance_fixed_rate if args.acceptance_fixed_rate is not None
                            else "profile:%s" % args.acceptance_profile if args.acceptance_profile
                            else ACCEPTANCE_JOBLIB),
@@ -231,6 +265,9 @@ def parse(argv=None):
                     help="multiply every trace target_tokens (dsdSim runs ceil(target/gamma) rounds; "
                          "gamma/L_real makes its round count match a real run with mean acceptance length L_real)")
     ap.add_argument("--max-num-seqs", type=int, default=64)
+    ap.add_argument("--replay-from", default=None, metavar="RUN_DIR",
+                    help="replay a real run's per-request gamma and per-round accepted counts "
+                         "(its steps.jsonl) instead of sampling acceptance")
     ap.add_argument("--client-side", action="store_true",
                     help="requests born at the drafters' clients (dsdSim's own scenario); see run_sim.py")
     ap.add_argument("--tail-ms", type=float, default=600_000.0,
