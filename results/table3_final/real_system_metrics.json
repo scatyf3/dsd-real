@@ -11,6 +11,7 @@
    "rate_rps": 1.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -62,6 +63,7 @@
    "rate_rps": 2.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -113,6 +115,7 @@
    "rate_rps": 4.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -164,6 +167,7 @@
    "rate_rps": 7.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -215,6 +219,7 @@
    "rate_rps": 1.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -266,6 +271,7 @@
    "rate_rps": 2.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -317,6 +323,7 @@
    "rate_rps": 4.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -368,6 +375,7 @@
    "rate_rps": 7.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -419,6 +427,7 @@
    "rate_rps": 1.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -470,6 +479,7 @@
    "rate_rps": 2.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -521,6 +531,7 @@
    "rate_rps": 4.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {
@@ -572,6 +583,7 @@
    "rate_rps": 7.0,
    "chat_template": true,
    "no_prefix_caching": true,
+   "client_side": null,
    "dtype": "bfloat16"
   },
   "system_metrics": {

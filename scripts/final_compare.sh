@@ -19,7 +19,7 @@ SIMPY=${SIMPY:-$SCR/venv/bin/python}
 export DSDSIM_ROOT=${DSDSIM_ROOT:-$SCR/dsdSim}
 PY=${PY:-.venv/bin/python}
 mkdir -p "$OUT"
-[ "${FETCH:-1}" = 1 ] && ssh -o BatchMode=yes NYULAB 'cd /mnt/hdd/external/dsd/dsd-real/runs/table3 && tar czf - --exclude="*.log" --exclude="*.ready" --exclude="outputs.jsonl" .' \
+[ "${FETCH:-1}" = 1 ] && ssh -o BatchMode=yes NYULAB "cd /mnt/hdd/external/dsd/dsd-real/runs/${REMOTE_RUN:-table3} && tar czf - --exclude='*.log' --exclude='*.ready' --exclude='outputs.jsonl' ." \
     2>/dev/null | tar xzf - -C "$OUT" || true
 
 methods=(); for m in vanilla specpp eagle3; do ls "$OUT/${m}_N1/dsd_metrics.json" >/dev/null 2>&1 && methods+=("$m"); done
