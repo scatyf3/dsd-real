@@ -1,0 +1,19 @@
+{
+  "target_step_ms": 4.54,
+  "draft_step_ms": 1.406,
+  "draft_call_ms": 3.757,
+  "_fit": {
+    "fit_on": [
+      "runs/table3_client_final/vanilla_N1",
+      "runs/table3_client_final/specpp_N1"
+    ],
+    "target": {
+      "n": 3481
+    },
+    "draft": {
+      "n": 3714,
+      "r2": 0.3628162543339968,
+      "abs_resid_p90_ms": 4.946021125683149
+    }
+  }
+}

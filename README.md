@@ -236,7 +236,7 @@ trace (dsdSim gsm8k, Poisson 到达) ─► experiments/driver.py ─► 进程�
 | [target/hidden_states.py](dsdreal/target/hidden_states.py) | K8：让 custom_class proposer 拿到 target 的 EAGLE3 aux hidden states（按新确认位置切片） |
 | [draft/eagle3_model.py](dsdreal/draft/eagle3_model.py) / [engine_eagle3.py](dsdreal/draft/engine_eagle3.py) | 远程 EAGLE3 head（移植自 vLLM llama_eagle3）：KV 回退 + reprefill + 链式 draft，批处理 |
 | [router/](dsdreal/router/) | N:M：target server 进程 + router frontend（RR / Random / JSQ，TTFT 从 router 入口算） |
-| [sim/](sim/) | 让 dsdSim 在同样配置下跑（缺 VIDUR 用标定文件替代），`calibrate_from_run.py` 从真机 run 拟合延迟 |
+| [sim/](sim/) | 让 dsdSim 在同样配置下跑。延迟两种来源：`calibrate_from_run.py` 从真机 run 拟合的标定文件（默认），或 VIDUR 在 A6000 profile 上的预测（`--latency vidur`，见 [sim/README.md](sim/README.md#latency-from-vidur)） |
 
 门禁（都已在本地小模型上过，remote 上用 Llama-3.1-8B / 3.2-1B 复跑）：
 

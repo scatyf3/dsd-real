@@ -74,7 +74,7 @@ def table(out: Path) -> str:
     any_r = next(iter(runs.values()))
     c = any_r["config"]
     head = (f"dsdSim, mode={c.get('mode')}, per_draft_rps={c.get('per_draft_rps')}, rtt={c.get('rtt_ms')} ms, "
-            f"seed={c.get('seed')}, calibration={c.get('calibration')}")
+            f"seed={c.get('seed')}, latency={c.get('latency', 'calibrated')}, calibration={c.get('calibration')}")
     status = ""
     try:
         status = json.loads(Path(c["calibration"]).read_text()).get("_status", "")

@@ -8,7 +8,9 @@ What it does (see sim/README.md for the why):
    import time when `thirdparty/Sai_speculative_vidur` is missing, and that
    module is imported unconditionally via `performance/__init__.py`, so
    without VIDUR the simulator cannot even be imported. We pre-register a stub
-   module under that name. `acceptance/regressor.py` also does
+   module under that name -- unless scripts/setup_vidur.sh has put a VIDUR
+   checkout there, in which case the real module is imported and taught the
+   A6000 SKU (see 5). `acceptance/regressor.py` also does
    `from src import sim` (expects the repo root on sys.path); we alias the
    already-imported `sim` module as `src.sim` so it is not imported twice.
 
@@ -32,6 +34,11 @@ What it does (see sim/README.md for the why):
 4. The acceptance classifier is a RandomForest pickled with n_jobs=-1; its
    per-call thread-pool overhead dominated runtime (~26 ms vs ~4 ms per
    predict_proba). We set n_jobs=1 after loading; predictions are identical.
+
+5. `VidurProvider`: the same latency paths as (2), answered by VIDUR's
+   execution time predictor through dsdSim's own `VidurRealtimeRunner`
+   instead of the fitted constants. Selected with
+   `performance_model.type: dsdreal_vidur` (make_config.py --latency vidur).
 """
 from __future__ import annotations
 
@@ -60,20 +67,23 @@ def load_sim(root: Optional[str] = None):
     global _SIM
     if _SIM is not None:
         return _SIM
-    src = str(dsdsim_root(root) / "src")
+    root_path = dsdsim_root(root)
+    src = str(root_path / "src")
     if src not in sys.path:
         # must precede stdlib: dsdSim has a top-level package named `trace`
         sys.path.insert(0, src)
 
-    stub = types.ModuleType("performance.vidur_realtime")
+    if not (root_path / "thirdparty" / "Sai_speculative_vidur" / "vidur").is_dir():
+        stub = types.ModuleType("performance.vidur_realtime")
 
-    class VidurRealtimeRunner:  # pragma: no cover - never used
-        def __init__(self, *a, **k):
-            raise RuntimeError("VIDUR is not available (stubbed by dsdsim_shim)")
+        class VidurRealtimeRunner:  # pragma: no cover - never used
+            def __init__(self, *a, **k):
+                raise RuntimeError("VIDUR is not available (stubbed by dsdsim_shim; "
+                                   "run scripts/setup_vidur.sh)")
 
-    stub.VidurRealtimeRunner = VidurRealtimeRunner
-    stub.get_shared_vidur_runner = lambda *a, **k: None
-    sys.modules.setdefault("performance.vidur_realtime", stub)
+        stub.VidurRealtimeRunner = VidurRealtimeRunner
+        stub.get_shared_vidur_runner = lambda *a, **k: None
+        sys.modules.setdefault("performance.vidur_realtime", stub)
 
     import sim  # noqa: E402  (dsdSim's src/sim.py)
 
@@ -82,6 +92,7 @@ def load_sim(root: Optional[str] = None):
     sys.modules["src"] = pkg
     sys.modules["src.sim"] = sim
 
+    _register_vidur_a6000()
     _patch_provider_factory(sim)
     _patch_batch_latency(sim)
     _patch_serve_loop_tail(sim)
@@ -156,12 +167,187 @@ def draft_ms(calib: Mapping[str, Any], gamma: int, seqs_on_drafter: int = 1) -> 
             + float(d.get("ms_per_token_per_seq", 0.0)) * gamma * max(0, seqs_on_drafter - 1))
 
 
+# --------------------------------------------------------------------------
+# VIDUR latency provider
+# --------------------------------------------------------------------------
+
+def _register_vidur_a6000() -> None:
+    """dsdSim's VIDUR glue only accepts a40/a100/h100; add the SKU that
+    sim/vidur/a6000_llama3.patch adds to VIDUR itself. No-op on the stub."""
+    vr = sys.modules.get("performance.vidur_realtime")
+    if not hasattr(vr, "_DEVICE_ALIAS"):
+        return
+    vr._DEVICE_ALIAS["a6000"] = "a6000"
+    vr._NODE_ALIAS["a6000_single"] = "a6000_single"
+    vr._DEFAULT_NODE["a6000"] = "a6000_single"
+
+
+def _vidur_cpu_overhead(enabled: bool) -> None:
+    """Turn VIDUR's own CPU-overhead model on or off (off in dsdSim, which
+    never passes `skip_cpu_overhead_modeling`). On, every predicted step also
+    carries schedule + input prep + sampler (incl. the LM head) + output
+    processing + the rest of sarathi's step, per batch size, from
+    data/profiling/cpu_overhead/<node>/<model>/cpu_overheads.csv.
+
+    One setting per process: dsdSim's runner caches predictors without it in
+    the key."""
+    import functools
+
+    import performance.vidur_realtime as vr
+
+    if getattr(vr, "_dsd_cpu_overhead", enabled) != enabled:
+        raise RuntimeError("VIDUR CPU-overhead modeling is per process; it was already set the other way")
+    vr._dsd_cpu_overhead = enabled
+    base = getattr(vr, "_dsd_predictor_config", vr.RandomForrestExecutionTimePredictorConfig)
+    vr._dsd_predictor_config = base
+    vr.RandomForrestExecutionTimePredictorConfig = (
+        functools.partial(base, skip_cpu_overhead_modeling=False) if enabled else base)
+
+
+def _runner_predict(cache_dir: Optional[str], cpu_overhead: bool = False):
+    """(vidur profile, phase requests of one step) -> time in ms, from
+    dsdSim's VidurRealtimeRunner: GPU time of the transformer blocks, plus
+    VIDUR's CPU-overhead model if `cpu_overhead`. Each request goes through
+    dsdSim's own PhaseRequest -> VIDUR mapping (`_build_batch`); a step that
+    carries both a prefill and a verify part is priced as one VIDUR batch,
+    which is what one vLLM forward is."""
+    from performance.vidur_realtime import get_shared_vidur_runner
+
+    _vidur_cpu_overhead(cpu_overhead)
+    runner = get_shared_vidur_runner(cache_root=Path(cache_dir) if cache_dir else None)
+    if runner is None:
+        raise RuntimeError("VIDUR is not available (run scripts/setup_vidur.sh)")
+
+    def predict(profile, requests):
+        parts = [runner._build_batch(r, profile) for r in requests]
+        batch = parts[0]
+        if len(parts) > 1:
+            batch = type(batch)(replica_id=0, requests=[q for b in parts for q in b.requests],
+                                num_tokens=[t for b in parts for t in b.num_tokens])
+        try:
+            return runner._get_predictor(profile).get_execution_time(batch, pipeline_stage=0).total_time * 1000.0
+        except KeyError as exc:
+            # VIDUR looks predictions up in tables built for <= 128 sequences,
+            # <= 4096 tokens per batch and <= 4096 tokens of summed KV cache
+            raise VidurRangeError(f"batch outside VIDUR's prediction grid (missing key {exc}): "
+                                  f"{[(r.phase, r.tokens_per_request, r.context_per_request) for r in requests]}") from exc
+
+    return predict
+
+
+class VidurRangeError(RuntimeError):
+    pass
+
+
+def phase_request(phase: str, tokens, contexts):
+    """A duck-typed PhaseRequest (the fields `_build_batch` reads) for one
+    forward over len(tokens) sequences: phase "prefill" with tokens = prompt
+    lengths, or "decode" with tokens = positions per sequence; contexts as
+    dsdSim's TargetServer._make_phase_request passes them."""
+    tokens = tuple(max(1, int(t)) for t in tokens)
+    contexts = tuple(max(0, int(c)) for c in contexts)
+    avg_ctx = max(1, round(sum(contexts) / len(contexts)))
+    return types.SimpleNamespace(
+        phase=phase, batch_size=len(tokens), tokens_per_request=tokens, context_per_request=contexts,
+        tokens_to_generate=max(tokens) if phase != "prefill" else 0, context_length=avg_ctx,
+        sequence_length=avg_ctx, prompt_tokens=None)
+
+
+def decode_request(batch_size: int, context: int, tokens: int = 1):
+    """One decode forward of `batch_size` sequences, `tokens` positions each."""
+    b = max(1, int(batch_size))
+    return phase_request("decode", (tokens,) * b, (max(1, int(context)),) * b)
+
+
+class VidurProvider:
+    """Latency from VIDUR instead of the fitted `dsdreal_calib` constants.
+
+    target step (the prefill and/or verify jobs of one batch):
+        VIDUR(batch) + vidur_overhead.target_step_ms
+    draft generation (g tokens for B sequences on one drafter): g
+    autoregressive decode steps of the draft model,
+        vidur_overhead.draft_call_ms
+        + g * (VIDUR(decode, B sequences, 1 token) + vidur_overhead.draft_step_ms)
+    (dsdSim's native mapping prices the g tokens as one forward; our drafter,
+    like any autoregressive one, runs g).
+
+    By default VIDUR prices the GPU operators of the transformer blocks only
+    (it leaves out the embedding and the LM head); with its CPU-overhead model
+    on (make_config.py --vidur-cpu-overhead) each step also carries sarathi's
+    CPU-side phases, the sampler with the LM head among them.
+    `vidur_overhead` is a fitted constant on top instead; all 0 unless
+    make_config.py --vidur-overhead supplies it.
+    """
+
+    def __init__(self, predict) -> None:
+        self._predict = predict
+        self._profiles: Dict[str, Dict[str, Any]] = {}
+        self._cache: Dict[Any, float] = {}
+
+    def register_target(self, *, target_id: str, model: str, hardware: str,
+                        metadata: Optional[Mapping[str, Any]] = None) -> None:
+        self._profiles[str(target_id)] = dict(metadata or {})
+
+    def flush(self) -> None:
+        return
+
+    def step_ms(self, profile: Mapping[str, Any], requests) -> float:
+        """Raw VIDUR time of one forward (no overhead)."""
+        key = (profile.get("model_name"), profile.get("device"), tuple(
+            (r.phase, r.batch_size, r.tokens_per_request, r.context_per_request,
+             r.tokens_to_generate, r.context_length, r.sequence_length, r.prompt_tokens) for r in requests))
+        lat = self._cache.get(key)
+        if lat is None:
+            lat = self._cache[key] = float(self._predict(profile, requests))
+        return lat
+
+    def batch_ms(self, target_id, requests) -> Optional[float]:
+        meta = self._profiles.get(str(target_id or ""))
+        if meta is None:
+            return None
+        oh = (meta.get("dsdreal_calib") or {}).get("vidur_overhead") or {}
+        return self.step_ms(meta["vidur"], requests) + float(oh.get("target_step_ms", 0.0))
+
+    def draft_ms(self, calib: Mapping[str, Any], gamma: int, seqs_on_drafter: int = 1, context: int = 0) -> float:
+        oh = calib.get("vidur_overhead") or {}
+        step = self.step_ms(calib["draft_vidur"], [decode_request(seqs_on_drafter, context)])
+        return float(oh.get("draft_call_ms", 0.0)) + gamma * (step + float(oh.get("draft_step_ms", 0.0)))
+
+    def get_metrics(self, request):
+        from performance import PhaseMetrics  # dsdSim's dataclass
+
+        meta = self._profiles.get(str(request.target_id or ""))
+        if meta is None:
+            return None
+        calib = meta.get("dsdreal_calib") or {}
+        if meta.get("role", "target") == "draft":
+            if calib.get("mode") == "lockstep":
+                return PhaseMetrics(latency_ms=0.0)
+            g = max(1, int(request.tokens_to_generate or request.fanout or 1))
+            return PhaseMetrics(latency_ms=draft_latency_ms(calib, g, 1, self, request.context_length))
+        return PhaseMetrics(latency_ms=self.batch_ms(request.target_id, [request]))
+
+
+def draft_latency_ms(calib: Mapping[str, Any], gamma: int, seqs_on_drafter: int = 1,
+                     provider=None, context: int = 0) -> float:
+    """Draft generation time from `calib.draft_source`: "vidur" (the 1B
+    drafter, a model VIDUR can price) or the fitted draft block (default; the
+    EAGLE3 head has no VIDUR representation)."""
+    if calib.get("draft_source") == "vidur":
+        return provider.draft_ms(calib, gamma, seqs_on_drafter, context)
+    return draft_ms(calib, gamma, seqs_on_drafter)
+
+
 def _patch_provider_factory(sim) -> None:
     orig = sim.create_performance_provider
 
     def create(config):
-        if str(getattr(config, "type", "") or "").lower() == "dsdreal_calibrated":
+        kind = str(getattr(config, "type", "") or "").lower()
+        if kind == "dsdreal_calibrated":
             return CalibratedProvider()
+        if kind == "dsdreal_vidur":
+            vcfg = getattr(config, "vidur", None) or {}
+            return VidurProvider(_runner_predict(vcfg.get("realtime_cache_dir"), bool(vcfg.get("cpu_overhead"))))
         return orig(config)
 
     sim.create_performance_provider = create
@@ -171,8 +357,9 @@ def _patch_batch_latency(sim) -> None:
     """Replace TargetServer._estimate_batch_latency_from_provider.
 
     Native dsdSim: latency = max(provider(prefill jobs), provider(decode jobs)).
-    Here: combine by calib.target.mixed_batch_combine ("max" | "sum"), then in
-    lockstep mode add rtt_ms + drafting time of the slowest drafter.
+    Here: combine by calib.target.mixed_batch_combine ("max" | "sum", or
+    "joint" = one VIDUR batch holding both parts, VidurProvider only), then
+    in lockstep mode add rtt_ms + drafting time of the slowest drafter.
     """
     TargetServer = sim.TargetServer
     native = TargetServer._estimate_batch_latency_from_provider
@@ -184,19 +371,22 @@ def _patch_batch_latency(sim) -> None:
         provider = getattr(self, "performance", None)
         if provider is None or not batch:
             return None
-        parts = []
+        reqs = []
         for phase_name in ("prefill", "decode"):
             jobs = [j for j in batch if (j.job_type == "prefill") == (phase_name == "prefill")]
-            if not jobs:
-                continue
-            req = self._make_phase_request(phase_name, jobs)
-            m = provider.get_metrics(req) if req is not None else None
-            if m is not None:
-                parts.append(max(0.0, m.latency_ms))
-        if not parts:
-            return None
+            req = self._make_phase_request(phase_name, jobs) if jobs else None
+            if req is not None:
+                reqs.append(req)
         combine = str(calib.get("target", {}).get("mixed_batch_combine", "max")).lower()
-        lat = sum(parts) if combine == "sum" else max(parts)
+        if combine == "joint":
+            lat = provider.batch_ms(self.p.id, reqs) if reqs else None
+            if lat is None:
+                return None
+        else:
+            parts = [max(0.0, m.latency_ms) for m in map(provider.get_metrics, reqs) if m is not None]
+            if not parts:
+                return None
+            lat = sum(parts) if combine == "sum" else max(parts)
         # Lockstep: a vLLM step is [forward: verify + prefill] then [propose:
         # draft + RTT for every running request]. The drafting is a *tail*
         # after the forward -- the batch's jobs are done when the forward ends
@@ -207,7 +397,7 @@ def _patch_batch_latency(sim) -> None:
         # get the tail too: that propose is the new request's first draft.
         self._dsd_tail_ms = 0.0
         if calib.get("mode") == "lockstep":
-            self._dsd_tail_ms = lockstep_extra_ms(calib, batch, self.cfg.gamma)
+            self._dsd_tail_ms = lockstep_extra_ms(calib, batch, self.cfg.gamma, provider)
             lat += self._dsd_tail_ms
         return lat
 
@@ -250,7 +440,7 @@ def _patch_serve_loop_tail(sim) -> None:
     sim.TargetServer._dsd_patched_serve_loop_src = "\n".join(lines)
 
 
-def lockstep_extra_ms(calib: Mapping[str, Any], batch, default_gamma: int) -> float:
+def lockstep_extra_ms(calib: Mapping[str, Any], batch, default_gamma: int, provider=None) -> float:
     """RTT + drafting time added to a lockstep target step.
 
     Every request in the step needs fresh drafts; requests are spread over the
@@ -259,14 +449,17 @@ def lockstep_extra_ms(calib: Mapping[str, Any], batch, default_gamma: int) -> fl
     """
     phys: Dict[str, int] = {}
     gmax = 1
+    ctx = 0
     for j in batch:
         key = str(j.draft_id).split("_r")[0]
         phys[key] = phys.get(key, 0) + 1
         g = j.gamma_override if getattr(j, "gamma_override", 0) > 0 else (
             j.token_count if j.job_type != "prefill" else default_gamma)
         gmax = max(gmax, int(g))
+        ctx += int(j.context_len or 0)
     per_drafter = max(phys.values()) if phys else 1
-    return float(calib.get("rtt_ms", 0.0)) + draft_ms(calib, gmax, per_drafter)
+    ctx = round(ctx / len(batch)) if batch else 0  # only the VIDUR draft model looks at it
+    return float(calib.get("rtt_ms", 0.0)) + draft_latency_ms(calib, gmax, per_drafter, provider, ctx)
 
 
 _PROFILE_CACHE: Dict[str, Any] = {}

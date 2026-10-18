@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 332" width="1000" height="332">
+<defs><marker id="mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#4f4f4a"/></marker><marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#2a78d6"/></marker><marker id="mt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#14946a"/></marker><marker id="mo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#d95926"/></marker><marker id="mg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#6b6b66"/></marker>
+<pattern id="hatch" patternUnits="userSpaceOnUse" width="5" height="5" patternTransform="rotate(45)">
+<rect width="5" height="5" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="5" stroke="#d6d6d1" stroke-width="2"/></pattern>
+</defs>
+<rect x="0" y="0" width="1000" height="332" rx="0" fill="#ffffff" stroke="none" stroke-width="1"/>
+<rect x="30" y="14" width="272" height="294" rx="8" fill="#ffffff" stroke="#8fd3b9" stroke-width="1"/>
+<rect x="25" y="19" width="272" height="294" rx="8" fill="#ffffff" stroke="#8fd3b9" stroke-width="1"/>
+<rect x="20" y="24" width="272" height="294" rx="8" fill="#e8f6f0" stroke="#14946a" stroke-width="1.3"/>
+<text x="32" y="47" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1f1f1e">Client device d<tspan dy="4" font-size="11">i</tspan><tspan dx="6" dy="-4">× N</tspan></text>
+<rect x="228" y="34" width="53.2" height="16" rx="3" fill="#14946a" stroke="none" stroke-width="1"/>
+<text x="233" y="46" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="start">GPU1–2</text>
+<rect x="32" y="62" width="248" height="48" rx="5" fill="#ffffff" stroke="#8fd3b9" stroke-width="1"/>
+<text x="42" y="81" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="13" fill="#1f1f1e" font-weight="700" text-anchor="start">Client</text>
+<text x="42" y="99" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start">owns its requests</text>
+<rect x="32" y="132" width="248" height="174" rx="5" fill="#ffffff" stroke="#8fd3b9" stroke-width="1"/>
+<text x="42" y="152" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="13" fill="#1f1f1e" font-weight="700" text-anchor="start">Draft server</text>
+<text x="270" y="152" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="end">ZMQ / HTTP</text>
+<rect x="40" y="164" width="232" height="54" rx="4" fill="#e8f6f0" stroke="#8fd3b9" stroke-width="1"/>
+<rect x="46" y="171" width="15" height="15" rx="3" fill="#14946a" stroke="none" stroke-width="1"/>
+<text x="53.5" y="182.5" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="middle">A</text>
+<text x="68" y="183" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="700" text-anchor="start">1B drafter (vLLM)</text>
+<circle cx="54" cy="201" r="6" fill="#1f1f1e"/>
+<text x="54" y="204.5" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="8.5" fill="#ffffff" font-weight="700" text-anchor="middle">4</text>
+<text x="66" y="205" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start">rollback: re-prefill confirmed prefix</text>
+<rect x="40" y="224" width="232" height="54" rx="4" fill="#e8f6f0" stroke="#8fd3b9" stroke-width="1"/>
+<rect x="46" y="231" width="15" height="15" rx="3" fill="#14946a" stroke="none" stroke-width="1"/>
+<text x="53.5" y="242.5" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="middle">B</text>
+<text x="68" y="243" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="700" text-anchor="start">EAGLE3 head (PyTorch)</text>
+<circle cx="54" cy="261" r="6" fill="#1f1f1e"/>
+<text x="54" y="264.5" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="8.5" fill="#ffffff" font-weight="700" text-anchor="middle">4</text>
+<text x="66" y="265" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start">rollback: truncate KV, re-prefill</text>
+<circle cx="50" cy="292" r="8" fill="#1f1f1e"/>
+<text x="50" y="296" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="middle">5</text>
+<text x="64" y="296" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="650" text-anchor="start">propose γ draft tokens</text>
+<rect x="316" y="66" width="80" height="194" rx="4" fill="url(#hatch)" stroke="#d6d6d1" stroke-width="1"/>
+<rect x="320" y="128" width="72" height="40" rx="3" fill="#ffffff" stroke="none" stroke-width="1"/>
+<text x="356" y="145" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11.5" fill="#1f1f1e" font-weight="700" text-anchor="middle">network</text>
+<text x="356" y="160" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="9.5" fill="#4f4f4a" font-weight="400" text-anchor="middle">RTT/2 each way</text>
+<rect x="410" y="16" width="576" height="302" rx="10" fill="none" stroke="#6b6b66" stroke-width="1.2" stroke-dasharray="5 4"/>
+<text x="422" y="36" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#6b6b66" font-weight="700" text-anchor="start">Target node</text>
+<rect x="504" y="24" width="38.8" height="16" rx="3" fill="#2a78d6" stroke="none" stroke-width="1"/>
+<text x="509" y="36" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="start">GPU0</text>
+<rect x="596" y="40" width="380" height="266" rx="8" fill="#edf4fd" stroke="#2a78d6" stroke-width="1.3"/>
+<text x="608" y="62" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="15" fill="#1f1f1e" font-weight="700" text-anchor="start">Target vLLM Server</text>
+<text x="964" y="62" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11.5" fill="#4f4f4a" font-weight="400" text-anchor="end">Llama-3.1-8B</text>
+<rect x="606" y="84" width="360" height="36" rx="4" fill="#ffffff" stroke="#9ec5f4" stroke-width="1"/>
+<text x="786.0" y="107" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="650" text-anchor="middle">Scheduler · continuous batching</text>
+<rect x="606" y="132" width="164" height="164" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.1"/>
+<text x="688.0" y="152" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="13" fill="#1f1f1e" font-weight="700" text-anchor="middle">Draft Runner</text>
+<rect x="616" y="162" width="144" height="70" rx="5" fill="#2a78d6" stroke="none" stroke-width="1"/>
+<text x="688.0" y="184" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="13" fill="#ffffff" font-weight="700" text-anchor="middle">Plugin</text>
+<text x="688.0" y="202" font-family="Adwaita Mono, Menlo, monospace" font-size="10.5" fill="#ffffff" font-weight="400" text-anchor="middle">RemoteDraftProposer</text>
+<text x="688.0" y="220" font-family="Adwaita Mono, Menlo, monospace" font-size="10.5" fill="#dbe9fb" font-weight="400" text-anchor="middle">custom_class</text>
+<circle cx="624" cy="260" r="8" fill="#1f1f1e"/>
+<text x="624" y="264" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="middle">3</text>
+<text x="636" y="264" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start" font-style="italic">propose() each step</text>
+<rect x="800" y="132" width="166" height="164" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.1"/>
+<text x="883.0" y="152" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="13" fill="#1f1f1e" font-weight="700" text-anchor="middle">Target Runner</text>
+<rect x="810" y="162" width="146" height="40" rx="4" fill="#edf4fd" stroke="#9ec5f4" stroke-width="1"/>
+<text x="883.0" y="187" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="650" text-anchor="middle">verify + prefill</text>
+<text x="810" y="224" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start">rejection sampler</text>
+<text x="810" y="242" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start">hidden states (for B)</text>
+<circle cx="818" cy="260" r="8" fill="#1f1f1e"/>
+<text x="818" y="264" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="middle">2</text>
+<text x="830" y="264" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start" font-style="italic">one forward per step</text>
+<polyline points="798,184 772,184" fill="none" stroke="#2a78d6" stroke-width="1.4" marker-end="url(#mb)" stroke-linejoin="round"/>
+<polyline points="772,212 798,212" fill="none" stroke="#2a78d6" stroke-width="1.4" marker-end="url(#mb)" stroke-linejoin="round"/>
+<polyline points="798,238 772,238" fill="none" stroke="#2a78d6" stroke-width="1.4" stroke-dasharray="3 2" marker-end="url(#mb)" stroke-linejoin="round"/>
+<text x="785.0" y="178" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="9" fill="#2a78d6" font-weight="400" text-anchor="middle">tokens</text>
+<text x="785.0" y="228" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="9" fill="#2a78d6" font-weight="400" text-anchor="middle">drafts</text>
+<text x="785.0" y="253" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="9" fill="#2a78d6" font-weight="400" text-anchor="middle">hidden</text>
+<rect x="422" y="132" width="162" height="174" rx="8" fill="#ffffff" stroke="#6b6b66" stroke-width="1.3"/>
+<text x="503.0" y="154" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="14" fill="#1f1f1e" font-weight="700" text-anchor="middle">Draft Client</text>
+<rect x="432" y="166" width="142" height="36" rx="5" fill="#f4f4f2" stroke="#6b6b66" stroke-width="1.1"/>
+<text x="503.0" y="181" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="650" text-anchor="middle">IPC</text>
+<text x="503.0" y="195" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#4f4f4a" font-weight="400" text-anchor="middle">in-process</text>
+<rect x="432" y="210" width="142" height="36" rx="5" fill="#f4f4f2" stroke="#6b6b66" stroke-width="1.1"/>
+<text x="503.0" y="225" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="650" text-anchor="middle">ZMQ</text>
+<text x="503.0" y="239" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#4f4f4a" font-weight="400" text-anchor="middle">msgpack</text>
+<rect x="432" y="254" width="142" height="36" rx="5" fill="#f4f4f2" stroke="#6b6b66" stroke-width="1.1"/>
+<text x="503.0" y="269" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="12" fill="#1f1f1e" font-weight="650" text-anchor="middle">HTTP</text>
+<text x="503.0" y="283" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#4f4f4a" font-weight="400" text-anchor="middle">JSON</text>
+<polyline points="280,92 314,92" fill="none" stroke="#14946a" stroke-width="1.4" marker-end="url(#mt)" stroke-linejoin="round"/>
+<polyline points="396,92 604,92" fill="none" stroke="#14946a" stroke-width="1.4" marker-end="url(#mt)" stroke-linejoin="round"/>
+<circle cx="426" cy="79" r="8" fill="#1f1f1e"/>
+<text x="426" y="83" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="middle">1</text>
+<text x="438" y="83" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="11" fill="#4f4f4a" font-weight="400" text-anchor="start" font-style="italic">prompt (once per request)</text>
+<polyline points="160,131 160,112" fill="none" stroke="#14946a" stroke-width="1.4" marker-end="url(#mt)" stroke-linejoin="round"/>
+<text x="168" y="125" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#4f4f4a" font-weight="400" text-anchor="start" font-style="italic">output tokens</text>
+<polyline points="605,180 585,180" fill="none" stroke="#4f4f4a" stroke-width="1.4" marker-end="url(#mk)" stroke-linejoin="round"/>
+<polyline points="585,216 605,216" fill="none" stroke="#4f4f4a" stroke-width="1.4" marker-end="url(#mk)" stroke-linejoin="round"/>
+<polyline points="422,200 398,200" fill="none" stroke="#4f4f4a" stroke-width="1.4" marker-end="url(#mk)" stroke-linejoin="round"/>
+<polyline points="316,200 282,200" fill="none" stroke="#4f4f4a" stroke-width="1.4" marker-end="url(#mk)" stroke-linejoin="round"/>
+<polyline points="280,240 314,240" fill="none" stroke="#4f4f4a" stroke-width="1.4" marker-end="url(#mk)" stroke-linejoin="round"/>
+<polyline points="396,240 421,240" fill="none" stroke="#4f4f4a" stroke-width="1.4" marker-end="url(#mk)" stroke-linejoin="round"/>
+<text x="356" y="193" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#4f4f4a" font-style="italic" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke" stroke-linejoin="round">accepted + bonus</text>
+<text x="356" y="256" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#4f4f4a" font-style="italic" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke" stroke-linejoin="round">γ drafts</text>
+<circle cx="298" cy="254" r="8" fill="#1f1f1e"/>
+<text x="298" y="258" font-family="TeX Gyre Heros, Helvetica, Arial, sans-serif" font-size="10.5" fill="#ffffff" font-weight="700" text-anchor="middle">6</text>
+</svg>

@@ -11,7 +11,11 @@
 # 3. sim sweeps (lockstep: our target step blocks on drafting) with the measured
 #    per-position acceptance profile and round counts aligned (γ/L̄ output scale);
 # 4. real_vs_sim_{pooled,tiered,replay}.md -- replay = tiered latency plus the
-#    real run's own per-round acceptance (sim/make_config.py --replay-from).
+#    real run's own per-round acceptance (sim/make_config.py --replay-from);
+# 5. with VIDUR=1, the same comparison with latency from VIDUR instead of the
+#    calibration: vidur_component.md (per step) and real_vs_sim_vidur_*.md;
+#    with VIDUR_CPU=1, VIDUR with its own CPU-overhead model instead of the
+#    fitted constants: vidur_component.cpu.md and real_vs_sim_vidur_cpu*.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=${1:-runs/table3_final}
@@ -129,3 +133,81 @@ echo
 $PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_tiered" | tee "$OUT/real_vs_sim_tiered.md"
 echo
 $PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_replay" | tee "$OUT/real_vs_sim_replay.md"
+
+# VIDUR=1: the same lockstep sim with target and 1B-draft latency from VIDUR's
+# execution time predictor instead of the constants fitted above (needs
+# scripts/setup_vidur.sh and the A6000 profiles under data/vidur/). VIDUR
+# prices GPU operators only; what a real step adds on top is fitted on the N=1
+# runs alone (vidur_component_check.py), so N=2/4/7 are held out.
+#   sim_vidur_raw_replay  VIDUR alone, real acceptance replayed
+#   sim_vidur_oh_replay   VIDUR + overhead, real acceptance replayed (vs sim_replay)
+#   sim_vidur_oh          VIDUR + overhead, acceptance profile (vs sim_pooled)
+# The EAGLE3 head is not a model VIDUR has: its draft cost stays the fitted
+# block (per N in the replay variants, as sim_replay), only its target steps
+# come from VIDUR, with their own overhead (hidden-state export).
+if [ "${VIDUR:-0}" = 1 ]; then
+    oh="$OUT/vidur_overhead.json"; oh_e="$OUT/vidur_overhead.eagle.json"
+    vdev=${VIDUR_DEVICE:-a6000}
+    # the target-only micro-benchmark (scripts/bench_target_forward.py), if fetched
+    bench=${BENCH:-runs/bench_target/bench.json}; bargs=(); [ -f "$bench" ] && bargs=(--bench "$bench")
+    $SIMPY scripts/vidur_component_check.py "${runs[@]}" --device "$vdev" --fit-on "$OUT"/{vanilla,specpp}_N1 \
+        --fit-overhead "$oh" --csv "$OUT/vidur_steps.csv" "${bargs[@]}" > "$OUT/vidur_component.md"
+    if [[ " ${methods[*]} " == *" eagle3 "* ]]; then
+        $SIMPY scripts/vidur_component_check.py "$OUT"/eagle3_N{1,2,4,7} --device "$vdev" --no-draft --fit-on "$OUT/eagle3_N1" \
+            --fit-overhead "$oh_e" > "$OUT/vidur_component.eagle.md"
+    fi
+    ohfor() { [ "$1" = eagle3 ] && echo "$oh_e" || echo "$oh"; }
+    for m in "${methods[@]}"; do
+        sc=$(scale "$m")
+        $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "1 2 4 7" --calibration "$(calfor "$m")" \
+            --acceptance-profile "$(proffor "$m")" --mode lockstep --target-tokens-scale "$sc" \
+            --out "$OUT/sim_vidur_oh" --python "$SIMPY" --jobs "${VIDUR_JOBS:-4}" --force \
+            -- --trace "$TRACE" $scen --latency vidur --vidur-device "$vdev" --vidur-overhead "$(ohfor "$m")" > /dev/null
+        for n in 1 2 4 7; do
+            [ -f "$OUT/${m}_N$n/steps.jsonl" ] || continue
+            for v in raw oh; do
+                ohargs=(); [ "$v" = oh ] && ohargs=(--vidur-overhead "$(ohfor "$m")")
+                $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "$n" --calibration "$OUT/calibration.${m}_N$n.json" \
+                    --mode lockstep --out "$OUT/sim_vidur_${v}_replay" --python "$SIMPY" --force \
+                    -- --trace "$TRACE" $scen --replay-from "$OUT/${m}_N$n" --latency vidur --vidur-device "$vdev" "${ohargs[@]}" > /dev/null
+            done
+        done
+    done
+    cat "$OUT/vidur_component.md"
+    for v in vidur_raw_replay vidur_oh_replay vidur_oh; do
+        echo
+        $PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_$v" | tee "$OUT/real_vs_sim_$v.md"
+    done
+fi
+
+# VIDUR_CPU=1: VIDUR with its own CPU-overhead model (profiles from
+# STEPS=cpu_overhead scripts/profile_vidur_nyulab.sh) and no fitted constant at
+# all -- the pure-VIDUR prediction. EAGLE3's head draft stays the fitted block.
+#   sim_vidur_cpu_replay  real acceptance replayed (vs sim_vidur_raw_replay)
+#   sim_vidur_cpu         acceptance profile (vs sim_vidur_oh)
+if [ "${VIDUR_CPU:-0}" = 1 ]; then
+    vdev=${VIDUR_DEVICE:-a6000}
+    bench=${BENCH:-runs/bench_target/bench.json}; bargs=(); [ -f "$bench" ] && bargs=(--bench "$bench")
+    # also trains VIDUR's CPU-overhead models once, before the parallel sweeps read them
+    $SIMPY scripts/vidur_component_check.py "${runs[@]}" --device "$vdev" --cpu-overhead "${bargs[@]}" \
+        > "$OUT/vidur_component.cpu.md"
+    for m in "${methods[@]}"; do
+        sc=$(scale "$m")
+        $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "1 2 4 7" --calibration "$(calfor "$m")" \
+            --acceptance-profile "$(proffor "$m")" --mode lockstep --target-tokens-scale "$sc" \
+            --out "$OUT/sim_vidur_cpu" --python "$SIMPY" --jobs "${VIDUR_JOBS:-4}" --force \
+            -- --trace "$TRACE" $scen --latency vidur --vidur-device "$vdev" --vidur-cpu-overhead > /dev/null
+        for n in 1 2 4 7; do
+            [ -f "$OUT/${m}_N$n/steps.jsonl" ] || continue
+            $SIMPY sim/run_sweep.py --methods "$(simname "$m")" --ns "$n" --calibration "$OUT/calibration.${m}_N$n.json" \
+                --mode lockstep --out "$OUT/sim_vidur_cpu_replay" --python "$SIMPY" --force \
+                -- --trace "$TRACE" $scen --replay-from "$OUT/${m}_N$n" --latency vidur --vidur-device "$vdev" \
+                --vidur-cpu-overhead > /dev/null
+        done
+    done
+    cat "$OUT/vidur_component.cpu.md"
+    for v in vidur_cpu_replay vidur_cpu; do
+        echo
+        $PY scripts/compare_real_sim.py "$OUT" "$OUT/sim_$v" | tee "$OUT/real_vs_sim_$v.md"
+    done
+fi

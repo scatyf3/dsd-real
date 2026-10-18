@@ -15,9 +15,11 @@ prediction yet. See [Calibrating](#calibrating).
 |---|---|
 | `calibration.json` | every latency constant the sim uses (PLACEHOLDERS) |
 | `make_config.py` | (method, N, calibration, per_draft_rps, rtt, n_requests, seed, mode) → `config.yaml` + retimed `trace.jsonl` |
-| `dsdsim_shim.py` | import fixes + calibrated latency provider + monkeypatches (no clone edits) |
+| `dsdsim_shim.py` | import fixes + calibrated latency provider + VIDUR latency provider + monkeypatches (no clone edits) |
 | `run_sim.py` | runs one config through the shim → result JSON (table row, diagnostics, per-request records) |
 | `run_sweep.py` | methods × N sweep → `results/<method>_N<n>.json` + `results/table3_sim.md` |
+| `calibrate_from_run.py` | fits the calibration constants from real runs (see [Calibrating from a real run](#calibrating-from-a-real-run-automated)) |
+| `vidur/a6000_llama3.patch` | what VIDUR lacks for our setup: the A6000 SKU and the Llama-3.1-8B / Llama-3.2-1B model configs (see [Latency from VIDUR](#latency-from-vidur)) |
 | `results/` | placeholder-calibrated async sweep; `results/lockstep/` = the same sweep in lockstep mode |
 
 ## Setup
@@ -232,10 +234,12 @@ per request with the `validate.py::load_actual_run` field names, plus
 ### Shim details (all in `dsdsim_shim.py`)
 
 * Stub module for `performance.vidur_realtime`, so the sim imports without
-  VIDUR.
+  VIDUR. With a VIDUR checkout in place (`scripts/setup_vidur.sh`) the real
+  module is imported instead and gets the `a6000` device alias.
 * `src.sim` alias: `acceptance/regressor.py` does `from src import sim`.
   The alias stops it from importing the module a second time.
-* Provider factory wrapper that adds `type: dsdreal_calibrated`.
+* Provider factory wrapper that adds `type: dsdreal_calibrated` and
+  `type: dsdreal_vidur`.
 * `TargetServer._estimate_batch_latency_from_provider` replaced: combine
   rule, plus the lockstep extra.
 * `DraftServer._lookup_acceptance` wrapped (only active when
@@ -299,3 +303,62 @@ $SIMPY sim/run_sweep.py --calibration sim/calibration.measured.json \
 It prints R² and the 90th-percentile absolute residual for each fit; check
 them before trusting the simulator's numbers. Prefill terms are not fitted
 yet (keep the placeholders or measure them from a no-draft baseline run).
+
+## Latency from VIDUR
+
+Everything above gets its latencies from constants fitted to our own runs.
+`--latency vidur` replaces them with what dsdSim was built around: VIDUR's
+execution time predictor, through dsdSim's own `VidurRealtimeRunner`.
+
+```bash
+scripts/setup_vidur.sh          # once: VIDUR checkout + patch + profiles + deps in the sim venv
+$SIMPY sim/run_sweep.py --methods "vanilla specpp" --mode lockstep --out sim/results/vidur \
+    -- --latency vidur [--vidur-overhead vidur_overhead.json]
+```
+
+**Where VIDUR comes from.** dsdSim imports it from
+`<dsdSim>/thirdparty/Sai_speculative_vidur`, a private fork we do not have.
+Upstream [microsoft/vidur](https://github.com/microsoft/vidur) has every name
+dsdSim imports, so `setup_vidur.sh` puts a pinned upstream checkout at that
+path (`VIDUR_SRC=<dir>` links another tree, e.g. the fork). Upstream knows
+neither our GPU nor our models; `vidur/a6000_llama3.patch` adds the `a6000`
+device SKU, a one-GPU node SKU and the two model configs.
+
+**Profiles.** VIDUR predicts from per-operator timings measured on the
+device: `data/vidur/profiling/compute/a6000/<model>/{mlp,attention}.csv`,
+produced on NYULAB by `scripts/profile_vidur_nyulab.sh` with VIDUR's own
+profilers (they time sarathi-serve's operators with dummy weights, in a venv
+of their own). The first use trains the random forests, a few minutes per
+model; they are cached under `.sim/vidur_cache`.
+
+**What is asked of VIDUR** (`VidurProvider` in the shim):
+
+| path | query |
+|---|---|
+| target step | the batch's prefill jobs and verify jobs, each through dsdSim's own PhaseRequest → VIDUR mapping (`vidur_realtime._build_batch`: a verify of γ drafts is a decode request of γ tokens), then priced as **one** VIDUR batch (`mixed_batch_combine: joint`) — one vLLM forward, instead of dsdSim's `max` of two separate queries |
+| 1B draft round | γ decode steps of the draft model, batch = sequences on that drafter. dsdSim's native mapping is one forward of γ tokens, which is not how an autoregressive drafter runs |
+| EAGLE3 head | not a model VIDUR can describe: stays on the fitted `draft.eagle` block |
+
+**What VIDUR does not price.** Its answer is the GPU time of the transformer
+blocks: the CPU-overhead model is off (there is no profile for it) and the
+embedding and LM head are left out. A real step takes longer by the engine's
+scheduling, sampling and output handling and by the proposer's bookkeeping.
+`--vidur-overhead` adds `{target_step_ms, draft_call_ms, draft_step_ms}` on
+top; `scripts/vidur_component_check.py --fit-overhead` fits them from real
+runs (on N=1 only in `final_compare.sh`, so the other N are held out) and
+reports, per step, how far VIDUR is from the measured time with and without
+them.
+
+**VIDUR's own CPU-overhead model** (`--vidur-cpu-overhead`) is the
+alternative to the fitted constants. VIDUR can add, per step and as a function
+of batch size, the CPU-side phases of sarathi's engine: schedule, input prep,
+sampler (sarathi's sampler does the LM-head matmul, so the LM head lands
+here), output processing, and the rest of the step (`ray_comm_time`). dsdSim
+never turns it on. The profiles come from `STEPS=cpu_overhead
+scripts/profile_vidur_nyulab.sh` (sarathi's engine with dummy weights; the
+patch fixes an upstream bug in that profiler and adds batch sizes 1/2/4, which
+upstream does not sample). It measures sarathi's engine, not our vLLM, and
+knows nothing of the speculative path (rejection sampler, proposer).
+
+`VIDUR=1 scripts/final_compare.sh <run dir>` runs the whole comparison,
+`VIDUR_CPU=1` the CPU-overhead variants; see `docs/table3-results.md`.

@@ -256,5 +256,263 @@
    "acceptance_ratio": 0.6352847088931541,
    "client_side_ttft_offset_ms": 10.0
   }
+ },
+ "sim_vidur_raw_replay": {
+  "eagle3_chain_N1": {
+   "ttft_mean_ms": 98.07744272289231,
+   "tpot_pooled_ms": 15.32736698238548,
+   "throughput_rps": 0.8653338882042213,
+   "acceptance_ratio": 0.5013341921236658,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N2": {
+   "ttft_mean_ms": 101.56499480579603,
+   "tpot_pooled_ms": 15.493362864811742,
+   "throughput_rps": 1.8718471151881886,
+   "acceptance_ratio": 0.4933669823119528,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N4": {
+   "ttft_mean_ms": 119.45478130961213,
+   "tpot_pooled_ms": 18.245227792742003,
+   "throughput_rps": 3.7113058425057854,
+   "acceptance_ratio": 0.49181339918402406,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N7": {
+   "ttft_mean_ms": 149.0378184726468,
+   "tpot_pooled_ms": 22.152198682942558,
+   "throughput_rps": 6.330620322771657,
+   "acceptance_ratio": 0.49722868112258695,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N1": {
+   "ttft_mean_ms": 122.8231542107895,
+   "tpot_pooled_ms": 13.790653182076253,
+   "throughput_rps": 0.8642799528351612,
+   "acceptance_ratio": 0.5399350094065333,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N2": {
+   "ttft_mean_ms": 136.00046364844334,
+   "tpot_pooled_ms": 14.701625307298055,
+   "throughput_rps": 1.8707451826126489,
+   "acceptance_ratio": 0.5438432835820896,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N4": {
+   "ttft_mean_ms": 146.86354360960803,
+   "tpot_pooled_ms": 15.771721031463404,
+   "throughput_rps": 3.7225077182759407,
+   "acceptance_ratio": 0.5399668958492488,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N7": {
+   "ttft_mean_ms": 164.91616644676697,
+   "tpot_pooled_ms": 16.565769453898,
+   "throughput_rps": 6.39967660836333,
+   "acceptance_ratio": 0.5478701459439946,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N1": {
+   "ttft_mean_ms": 109.15799050276404,
+   "tpot_pooled_ms": 14.420944270689132,
+   "throughput_rps": 0.8636259973807594,
+   "acceptance_ratio": 0.6353017521090201,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N2": {
+   "ttft_mean_ms": 112.57402418226785,
+   "tpot_pooled_ms": 14.654763981557563,
+   "throughput_rps": 1.8692818657522425,
+   "acceptance_ratio": 0.6343196521370241,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N4": {
+   "ttft_mean_ms": 117.78103324577063,
+   "tpot_pooled_ms": 15.298675090948315,
+   "throughput_rps": 3.735499280149339,
+   "acceptance_ratio": 0.6368235670829331,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N7": {
+   "ttft_mean_ms": 128.42359794762353,
+   "tpot_pooled_ms": 16.135475414307248,
+   "throughput_rps": 6.4049034257928845,
+   "acceptance_ratio": 0.6352847088931541,
+   "client_side_ttft_offset_ms": 10.0
+  }
+ },
+ "sim_vidur_oh_replay": {
+  "eagle3_chain_N1": {
+   "ttft_mean_ms": 108.29808604701611,
+   "tpot_pooled_ms": 17.361829112289666,
+   "throughput_rps": 0.864152476699151,
+   "acceptance_ratio": 0.5013341921236658,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N2": {
+   "ttft_mean_ms": 117.53820046506493,
+   "tpot_pooled_ms": 17.566295265582937,
+   "throughput_rps": 1.8678468459589908,
+   "acceptance_ratio": 0.4933669823119528,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N4": {
+   "ttft_mean_ms": 135.8938618938551,
+   "tpot_pooled_ms": 20.401039918227372,
+   "throughput_rps": 3.6981178617238344,
+   "acceptance_ratio": 0.49181339918402406,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N7": {
+   "ttft_mean_ms": 168.14542421235703,
+   "tpot_pooled_ms": 24.493802173771847,
+   "throughput_rps": 6.286164572055133,
+   "acceptance_ratio": 0.49722868112258695,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N1": {
+   "ttft_mean_ms": 160.35209352848693,
+   "tpot_pooled_ms": 18.58386956929008,
+   "throughput_rps": 0.8604989180931312,
+   "acceptance_ratio": 0.5399350094065333,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N2": {
+   "ttft_mean_ms": 176.16598310734523,
+   "tpot_pooled_ms": 19.83339840290585,
+   "throughput_rps": 1.858835875041319,
+   "acceptance_ratio": 0.5438432835820896,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N4": {
+   "ttft_mean_ms": 190.81893513073157,
+   "tpot_pooled_ms": 20.89406123731236,
+   "throughput_rps": 3.686353629998565,
+   "acceptance_ratio": 0.5399668958492488,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N7": {
+   "ttft_mean_ms": 222.2795285066903,
+   "tpot_pooled_ms": 23.035188679927934,
+   "throughput_rps": 6.299544946290015,
+   "acceptance_ratio": 0.5478701459439946,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N1": {
+   "ttft_mean_ms": 135.8668054121328,
+   "tpot_pooled_ms": 18.923056614793985,
+   "throughput_rps": 0.8599741069687723,
+   "acceptance_ratio": 0.6353017521090201,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N2": {
+   "ttft_mean_ms": 142.113138155696,
+   "tpot_pooled_ms": 19.230604646171955,
+   "throughput_rps": 1.857818757844285,
+   "acceptance_ratio": 0.6343196521370241,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N4": {
+   "ttft_mean_ms": 150.48196788558744,
+   "tpot_pooled_ms": 20.134477645536062,
+   "throughput_rps": 3.705700627541305,
+   "acceptance_ratio": 0.6368235670829331,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N7": {
+   "ttft_mean_ms": 163.73029002534136,
+   "tpot_pooled_ms": 21.05042930492298,
+   "throughput_rps": 6.318994138073873,
+   "acceptance_ratio": 0.6352847088931541,
+   "client_side_ttft_offset_ms": 10.0
+  }
+ },
+ "sim_vidur_oh": {
+  "eagle3_chain_N1": {
+   "ttft_mean_ms": 121.69324486603088,
+   "tpot_pooled_ms": 16.50444957501109,
+   "throughput_rps": 0.863623075352499,
+   "acceptance_ratio": 0.5448717948717948,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N2": {
+   "ttft_mean_ms": 128.425902714391,
+   "tpot_pooled_ms": 16.961448786635945,
+   "throughput_rps": 1.8594482741611393,
+   "acceptance_ratio": 0.5441857329078078,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N4": {
+   "ttft_mean_ms": 133.62836650130293,
+   "tpot_pooled_ms": 17.856190196242597,
+   "throughput_rps": 3.7248031939545707,
+   "acceptance_ratio": 0.5474205597358307,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "eagle3_chain_N7": {
+   "ttft_mean_ms": 147.20063511488715,
+   "tpot_pooled_ms": 18.73613564660119,
+   "throughput_rps": 6.3789434077318115,
+   "acceptance_ratio": 0.5470280950576517,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N1": {
+   "ttft_mean_ms": 158.42541347582966,
+   "tpot_pooled_ms": 17.51730052129885,
+   "throughput_rps": 0.8585369914840084,
+   "acceptance_ratio": 0.6181897874205566,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N2": {
+   "ttft_mean_ms": 181.35195214900912,
+   "tpot_pooled_ms": 18.917039036095105,
+   "throughput_rps": 1.8564611005875922,
+   "acceptance_ratio": 0.6256454388984509,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N4": {
+   "ttft_mean_ms": 197.51370862741348,
+   "tpot_pooled_ms": 19.966779860472517,
+   "throughput_rps": 3.6716059978940305,
+   "acceptance_ratio": 0.6267568232749129,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "specpp_N7": {
+   "ttft_mean_ms": 222.56688392984216,
+   "tpot_pooled_ms": 22.274507875494738,
+   "throughput_rps": 6.216639474187427,
+   "acceptance_ratio": 0.6245029080687574,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N1": {
+   "ttft_mean_ms": 137.74054855289944,
+   "tpot_pooled_ms": 17.931985750800397,
+   "throughput_rps": 0.862480500019384,
+   "acceptance_ratio": 0.7042797324487465,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N2": {
+   "ttft_mean_ms": 146.53382761131977,
+   "tpot_pooled_ms": 18.3997796830916,
+   "throughput_rps": 1.8562932605493043,
+   "acceptance_ratio": 0.6915623415102902,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N4": {
+   "ttft_mean_ms": 156.66335216252185,
+   "tpot_pooled_ms": 19.261635195129283,
+   "throughput_rps": 3.7157757948911594,
+   "acceptance_ratio": 0.6927107610704814,
+   "client_side_ttft_offset_ms": 10.0
+  },
+  "vanilla_N7": {
+   "ttft_mean_ms": 165.13020207067714,
+   "tpot_pooled_ms": 20.221356841741983,
+   "throughput_rps": 6.352304505026099,
+   "acceptance_ratio": 0.6912963111789762,
+   "client_side_ttft_offset_ms": 10.0
+  }
  }
 }

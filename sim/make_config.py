@@ -31,6 +31,15 @@ import yaml
 
 METHODS = ("vanilla", "specpp", "eagle")
 ACCEPTANCE_JOBLIB = "src/acceptance/llama3_1b_vs_8b_500.joblib"
+TARGET_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+DRAFT_MODEL = "meta-llama/Llama-3.2-1B-Instruct"
+
+
+def vidur_profile(model: str, device: str) -> dict:
+    """The per-device block dsdSim's VidurRealtimeRunner reads (one GPU per
+    replica; the node is derived from the device)."""
+    return {"model_name": model, "device": device, "tensor_parallel": 1, "pipeline_parallel": 1,
+            "scheduler": "sarathi", "chunk_size": 512}
 
 
 def poisson_arrivals(n: int, rate_rps: float, seed: int = 0) -> list[float]:
@@ -119,19 +128,35 @@ def build(args) -> tuple[dict, list[dict]]:
     sched = calib_all.get("scheduling", {})
     one_way = 0.0 if args.mode == "lockstep" else args.rtt_ms / 2.0
 
+    vidur = args.latency == "vidur"
+    target_vidur = vidur_profile(TARGET_MODEL, args.vidur_device)
+    draft_vidur = vidur_profile(DRAFT_MODEL, args.vidur_device)
+    if vidur:
+        # target steps from VIDUR (prefill + verify parts as one batch); the
+        # 1B drafter too. The EAGLE3 head is not a model VIDUR can price: its
+        # draft cost stays the fitted block of the calibration file.
+        calib["latency"] = "vidur"
+        calib["target"] = {"mixed_batch_combine": "joint"}
+        calib["vidur_overhead"] = (json.loads(Path(args.vidur_overhead).read_text())
+                                   if args.vidur_overhead else {})
+        if draft_kind != "eagle":
+            calib["draft_source"] = "vidur"
+            calib["draft_vidur"] = draft_vidur
+
     devices = [{
         "id": "t0",
         "role": "target",
-        "model": "meta-llama/Llama-3.1-8B-Instruct",
+        "model": TARGET_MODEL,
         "gpu": "RTX_A6000",
         "batch_size": args.max_num_seqs,
         "batch_window_ms": float(sched.get("target_batch_window_ms", 0.01)),
         "cluster": "default",
         "dsdreal_calib": calib,
+        **({"vidur": target_vidur} if vidur else {}),
     }]
     connections = []
     draft_model = ("yuhuili/EAGLE3-LLaMA3.1-Instruct-8B" if args.method == "eagle"
-                   else "meta-llama/Llama-3.2-1B-Instruct")
+                   else DRAFT_MODEL)
     for rec in trace:
         did = rec["draft_id"]
         devices.append({
@@ -142,6 +167,7 @@ def build(args) -> tuple[dict, list[dict]]:
             "capability": 1.0,
             "cluster": "default",
             "dsdreal_calib": calib,
+            **({"vidur_profile": draft_vidur} if vidur else {}),
         })
         connections.append({
             "draft": did,
@@ -204,6 +230,9 @@ def build(args) -> tuple[dict, list[dict]]:
             "client_side": args.client_side,
             "trace_source": str(trace_src), "calibration": str(Path(args.calibration).resolve()),
             "draft_profile": draft_kind, "target_tokens_scale": args.target_tokens_scale,
+            "latency": args.latency,
+            "vidur_overhead": str(Path(args.vidur_overhead).resolve()) if vidur and args.vidur_overhead else None,
+            "vidur_cpu_overhead": vidur and args.vidur_cpu_overhead,
             "replay_from": str(Path(args.replay_from).resolve()) if args.replay_from else None,
             "acceptance": ("fixed:%s" % args.acceptance_fixed_rate if args.acceptance_fixed_rate is not None
                            else "profile:%s" % args.acceptance_profile if args.acceptance_profile
@@ -227,7 +256,10 @@ def build(args) -> tuple[dict, list[dict]]:
         # time turns trace replay into open-loop arrivals.
         "think_time": {"enabled": True, "distribution": "constant", "mean_ms": 0.0, "min_ms": 0.0},
         "network": {"enabled": True, "bandwidth_mbps": 0.0, "link_capacity": 1_000_000, "jitter_pct": 0.0},
-        "performance_model": {"type": "dsdreal_calibrated"},
+        "performance_model": ({"type": "dsdreal_vidur",
+                               "vidur": {"realtime_cache_dir": str(Path(args.vidur_cache).resolve()),
+                                         "cpu_overhead": args.vidur_cpu_overhead}}
+                              if vidur else {"type": "dsdreal_calibrated"}),
         "mixed_batching": True,
         "burn_in_ms": 0.0,
         "scheduler": {"type": "baseline", "prefill": dict(lane), "decode": dict(lane),
@@ -264,6 +296,18 @@ def parse(argv=None):
     ap.add_argument("--target-tokens-scale", type=float, default=1.0,
                     help="multiply every trace target_tokens (dsdSim runs ceil(target/gamma) rounds; "
                          "gamma/L_real makes its round count match a real run with mean acceptance length L_real)")
+    ap.add_argument("--latency", choices=("calibrated", "vidur"), default="calibrated",
+                    help="calibrated = the fitted constants of --calibration; vidur = VIDUR's "
+                         "execution time predictor (needs scripts/setup_vidur.sh)")
+    ap.add_argument("--vidur-device", default="a6000", help="VIDUR device SKU of target and drafters")
+    ap.add_argument("--vidur-overhead", default=None, metavar="JSON",
+                    help="{target_step_ms, draft_step_ms, draft_call_ms} added on top of VIDUR's GPU "
+                         "time (scripts/vidur_component_check.py --fit-overhead); default all 0")
+    ap.add_argument("--vidur-cpu-overhead", action="store_true",
+                    help="turn on VIDUR's own CPU-overhead model (schedule, input prep, sampler incl. the LM "
+                         "head, output processing per batch size; needs cpu_overheads.csv profiles)")
+    ap.add_argument("--vidur-cache", default=os.environ.get("VIDUR_CACHE", ".sim/vidur_cache"),
+                    help="where VIDUR keeps its trained predictors")
     ap.add_argument("--max-num-seqs", type=int, default=64)
     ap.add_argument("--replay-from", default=None, metavar="RUN_DIR",
                     help="replay a real run's per-request gamma and per-round accepted counts "

@@ -139,6 +139,43 @@ MAPE 15.2%（36 格，中位数 9.6%）；draft 延迟合并标定时 18.0%（�
 
 MAPE 13.3%（36 格，中位数 5.5%）。T1（N ≤ 2）下 TPOT −6…0%、吞吐一致；TTFT 仍偏高 8–16%（prefill 段，与接受率无关）；N=4（共卡）TPOT −13%；N=7 仍严重低估——这些就是 dsdSim 系统模型本身的误差。
 
+### 延迟换成 VIDUR 预测（A6000 profile）
+
+上面的 sim 用的是从真机拟合的延迟常数。论文里 dsdSim 的 GPU 延迟来自 VIDUR，所以这里把延迟换成 VIDUR 的预测再比一次（`VIDUR=1 scripts/final_compare.sh`，在 NYULAB 上跑，结果在 [results/table3_client/](../results/table3_client/)）：
+
+- **VIDUR 来源**：dsdSim 依赖的私有 fork（`thirdparty/Sai_speculative_vidur`）拿不到，换成上游 `microsoft/vidur`（固定 commit，dsdSim 用到的接口它都有），打补丁加上 A6000 和 Llama-3.1-8B / 3.2-1B（[sim/vidur/a6000_llama3.patch](../sim/vidur/a6000_llama3.patch)）。
+- **profile**：用 VIDUR 官方 profiler（sarathi-serve 算子，dummy 权重）在 NYULAB 一张空闲 A6000 上测（`scripts/profile_vidur_nyulab.sh`，GPU 全程无他人进程），CSV 在 `data/vidur/profiling/compute/a6000/`。
+- **怎么问 VIDUR**（`sim/dsdsim_shim.py` 的 `VidurProvider`）：target 一个 step 的 prefill + verify 合成一个 VIDUR batch（一次 vLLM forward），映射沿用 dsdSim 自己的 `_build_batch`；1B draft 按 γ 次 decode step 计。dsdSim 原生把 γ 个 draft token 当一次 forward，单步误差 −85…−97%，没法用。EAGLE3 head 不是 VIDUR 能描述的模型，draft 仍用拟合值，只有它的 target step 走 VIDUR。
+- **overhead**：VIDUR 只算 transformer block 的 GPU 时间（CPU overhead 模型关闭，embedding/LM head 不算）。真机 step 多出的部分拟合成常数，**只用 N=1 的 run 拟合**，N=2/4/7 是留出集：target step +4.5 ms（EAGLE3 +5.3 ms，多了 hidden states 导出）；draft 每轮 +3.8 ms，每个 draft step 再 +1.4 ms。
+
+**单步精度**（`vidur_component.md`，误差 = (VIDUR − 实测)/实测，中位数 / MAPE）：
+
+| step | 实测 p50 (ms) | VIDUR 原值 | 原值误差 | + overhead |
+|---|---|---|---|---|
+| target verify，全部 8319 步 | 26.5 | 21.6 | −16% / 17% | +1% / 5% |
+| 其中 B = 17–64（554 步） | 36.0 | 24.6 | −22% / 24% | −8% / 12% |
+| target verify + prefill（1728 步） | 36.6 | 30.9 | −13% / 14% | −1% / 7% |
+| 1B draft，T1（N ≤ 2） | 23–42 | 14–28 | −34…−42% | −3…+3%，MAPE 5–10% |
+| 1B draft，T2（N = 4/7，共卡） | 43–127 | 14–28 | −66…−79% | −45…−66% |
+
+纯 target 微基准（不带投机，`scripts/bench_target_forward.py`，`vidur_bench.md`）：decode step VIDUR 原值在 B ≤ 32 时偏低 8–16%（加 overhead 后 +5% 左右），B=64 时基本吻合（−1%，加 overhead 反而 +15%）；prefill 偏高 11–18%。prefill 偏高的一个可能原因是 dsdSim 的映射把 prompt 同时当作「已有 KV cache」和「待算 token」，多算了一份 attention。
+
+**端到端**（36 格 MAPE，括号内按 N 分：N=1 / 2 / 4 / 7）：
+
+| 变体 | 延迟 | 接受率 | MAPE |
+|---|---|---|---|
+| sim_replay（上一节） | 真机拟合（按 N） | 回放 | 13.3%（4.4 / 5.6 / 5.3 / 37.9%） |
+| sim_vidur_raw_replay | VIDUR 原值 | 回放 | 28.6%（15.6 / 16.4 / 28.4 / 54.1%） |
+| sim_vidur_oh_replay | VIDUR + overhead | 回放 | 19.0%（3.4 / 3.7 / 19.1 / 50.0%） |
+| sim_pooled（上一节） | 真机拟合（合并） | 实测 profile | 18.0%（6.7 / 8.0 / 11.4 / 45.8%） |
+| sim_vidur_oh | VIDUR + overhead | 实测 profile | 20.0%（3.9 / 3.4 / 20.4 / 52.0%） |
+
+结论：
+
+1. **T1（每个 drafter 独占一卡，N ≤ 2）VIDUR 比真机拟合更准**：MAPE 3.4–3.9%，拟合常数是 4.4–8.0%。拟合版低负载 TTFT 偏高 8–25% 的问题也消失了（sim_vidur_oh 下 −5…0%；回放版 −4…−2%，EAGLE3 −13…−9%）——印证了上文「拟合的 prefill 项（R² ≈ 0）高估」的判断。
+2. **VIDUR 原值不能直接用**：GPU 算子时间之外每个 step 还有 4–5 ms，draft 每轮 ~4 ms + 每步 ~1.4 ms；不补这部分 T1 MAPE 就是 15–16%，TTFT/TPOT 全面偏低 17–28%。补 overhead 只用了 N=1 的数据。
+3. **N ≥ 4 VIDUR 更差**（19–20% vs 按档位拟合 5.3%）：误差几乎全在 draft——3–4 个 drafter 进程共用一张卡，单卡 profile 表达不了这种争用（单步 −45…−66%）；按 N 拟合的版本是把争用吸收进了常数。N=7 的大误差和上一节一样来自准入队列与共卡，与延迟模型无关。
+
 ### 对照过程中发现并修正的问题（均在我们的工具里，不在 dsdSim 原版）
 
 - **lockstep 的 draft 位置**：vLLM 一个 step 是「forward（verify + prefill）→ propose（draft + RTT）」，draft 在尾部；我们的 sim 适配层最初把 draft + RTT 算在 batch 头部，新请求的 prefill 所在 batch 要白等别人的 draft、首轮还要再付一次自己的——TTFT 平白多一轮（≈ 34 ms）。改为「forward 结束即完成、target 再占用 draft 尾巴」后，低负载 TTFT 误差从 +33…59% 降到现在的水平，TPOT/吞吐不变（`sim/dsdsim_shim.py`）。

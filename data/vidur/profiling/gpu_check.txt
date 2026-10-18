@@ -1,0 +1,2 @@
+gpu 0 NVIDIA RTX A6000
+clean

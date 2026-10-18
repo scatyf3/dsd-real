@@ -1,0 +1,13 @@
+{
+  "target_step_ms": 5.291,
+  "draft_step_ms": 0.0,
+  "draft_call_ms": 0.0,
+  "_fit": {
+    "fit_on": [
+      "runs/table3_client_final/eagle3_N1"
+    ],
+    "target": {
+      "n": 2379
+    }
+  }
+}

@@ -37,7 +37,7 @@ def main(real_dir: str, sim_dir: str) -> int:
     ns = sorted({n for _, n in real})
     print("| Method | Metric | " + " | ".join(f"N={n} real / sim (err)" for n in ns) + " |")
     print("|---|---|" + "---|" * len(ns))
-    errs = []
+    errs, by_n = [], {}
     for key, (name, sim_key) in METHODS.items():
         if not any(k == key for k, _ in real):
             continue
@@ -52,12 +52,16 @@ def main(real_dir: str, sim_dir: str) -> int:
                 rv, sv = get_real(r), s[sim_field]
                 err = (sv - rv) / rv if rv else float("nan")
                 errs.append(abs(err))
+                by_n.setdefault(n, []).append(abs(err))
                 cells.append(f"{rv:.1f} / {sv:.1f} ({err:+.0%})")
             print(f"| {name if i == 0 else ''} | {label} | " + " | ".join(cells) + " |")
     if errs:
         errs.sort()
         print(f"\nMAPE over {len(errs)} cells: {sum(errs) / len(errs):.1%} "
               f"(median {errs[len(errs) // 2]:.1%}, max {errs[-1]:.1%})")
+        # N=1/2 have a GPU per drafter; from N=4 on drafters share GPUs, which
+        # no per-device latency model expresses -- read the two apart
+        print("MAPE by N: " + ", ".join(f"N={n} {sum(v) / len(v):.1%}" for n, v in sorted(by_n.items())))
     return 0
 
 

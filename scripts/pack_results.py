@@ -18,7 +18,13 @@ def main(src: str, dst: str) -> int:
     os.makedirs(dst, exist_ok=True)
     for f in ("table3.md", "deployment.md", "real_vs_sim_pooled.md", "real_vs_sim_tiered.md", "real_vs_sim_replay.md",
               "calibration.pooled.json", "calibration.eagle.json", "calibration.pooled.fit.json",
-              "calibration.eagle.fit.json", "eagle3_profile.json"):
+              "calibration.eagle.fit.json", "eagle3_profile.json",
+              # VIDUR=1 scripts/final_compare.sh
+              "real_vs_sim_vidur_raw_replay.md", "real_vs_sim_vidur_oh_replay.md", "real_vs_sim_vidur_oh.md",
+              "real_vs_sim_vidur_raw.md",
+              "vidur_component.md", "vidur_component.eagle.md", "vidur_overhead.json", "vidur_overhead.eagle.json",
+              # VIDUR_CPU=1
+              "real_vs_sim_vidur_cpu_replay.md", "real_vs_sim_vidur_cpu.md", "vidur_component.cpu.md"):
         if os.path.exists(f"{src}/{f}"):
             shutil.copy(f"{src}/{f}", f"{dst}/{f}")
     if os.path.exists(f"{src}/calib_g8/profile.json"):
@@ -38,7 +44,9 @@ def main(src: str, dst: str) -> int:
         real[os.path.basename(run)] = entry
     json.dump(real, open(f"{dst}/real_system_metrics.json", "w"), indent=1)
     sim = {}
-    for variant in ("sim_pooled", "sim_tiered", "sim_replay"):
+    for variant in ("sim_pooled", "sim_tiered", "sim_replay",
+                    "sim_vidur_raw_replay", "sim_vidur_oh_replay", "sim_vidur_oh",
+                    "sim_vidur_raw", "sim_vidur_cpu_replay", "sim_vidur_cpu"):
         for p in sorted(glob.glob(f"{src}/{variant}/*_N*.json")):
             d = json.load(open(p))
             sim.setdefault(variant, {})[os.path.basename(p)[:-5]] = {

@@ -45,3 +45,30 @@ agent告诉我有vllm插件这个东西，这里的plan是
 ### stage 3 
 
 多draft对1target, routing策略，metric收集
+
+## official goal
+
+我们想做paper里的table3, 支持Vanilla SD, SpecDec++和EAGLE3的e2e 验证，支持一个小规模
+
+![alt text](image.png)
+
+
+
+可以先从vanilla sd开始，n draft 1target=>n：m
+
+sim的数据参考 https://github.com/yfzzzyyls/dsdSim，我们想让我们的模拟和sim尽可能一致
+
+experiments setup
+1. target: llama3 8b+1b
+2. draft: llama3 1b(vanilla), specdec++, eagle head, 
+3. 先优先前2个
+
+
+eagle3可能需要自己写一个runner和server，
+1. runner直接迁移vllm的eagle runner，
+2. 写一个通信协议从target发hidden state给draft
+3. draft需要某些管理机制，kv回退和reprefill
+4. 外面包一层server，和indep draft一样读req
+5. target侧拿出hidden state，可能比较复杂
+
+remote算力，选没人用的显卡，最多用三个，验证2：1

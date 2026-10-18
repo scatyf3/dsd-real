@@ -1,5 +1,5 @@
 {
-  "_status": "MEASURED from ['runs/table3_client_final/vanilla_N1', 'runs/table3_client_final/vanilla_N2', 'runs/table3_client_final/vanilla_N4', 'runs/table3_client_final/vanilla_N7', 'runs/table3_client_final/specpp_N1', 'runs/table3_client_final/specpp_N2', 'runs/table3_client_final/specpp_N4', 'runs/table3_client_final/specpp_N7'] (target verify + draft.specpp); other fields as in /home/scatyf3/dsd-real/sim/calibration.json",
+  "_status": "MEASURED from ['runs/table3_client_final/vanilla_N1', 'runs/table3_client_final/vanilla_N2', 'runs/table3_client_final/vanilla_N4', 'runs/table3_client_final/vanilla_N7', 'runs/table3_client_final/specpp_N1', 'runs/table3_client_final/specpp_N2', 'runs/table3_client_final/specpp_N4', 'runs/table3_client_final/specpp_N7'] (target verify + draft.specpp); other fields as in /mnt/hdd/external/dsd/dsd-real/sim/calibration.json",
   "_units": "milliseconds",
   "target": {
     "_what": "Llama-3.1-8B-Instruct bf16 on 1x RTX A6000 (vLLM, max_num_seqs 64)",
