@@ -8,7 +8,7 @@ The approach is to **plug into vLLM, not fork it**: the drafter and the target e
 `speculative_config.method = "custom_class"` slots a remote drafter into the target's speculative path.
 All seven Stage 0 probes pass on the pinned platform, and both legs of Stage 2 (fused and distributed) have been verified on real GPUs.
 
-Platform: **vLLM 0.27.1**, pinned in [requirements/gpu.txt](requirements/gpu.txt). Stages 0–2 were verified on 8×L40S (sm_89, 48 GB); the small-scale Table 3 ran on 4×RTX A6000 (NYULAB).
+Platform: **vLLM 0.27.1**, pinned in [requirements/gpu.txt](requirements/gpu.txt). Stages 0–2 were verified on 8×L40S (sm_89, 48 GB), and the small-scale Table 3 ran on 4×RTX A6000 (NYULAB).
 
 ---
 
@@ -35,8 +35,8 @@ variable-length list of draft tokens per request.
 **Three contracts (pinned down by code and tests, not by convention):**
 
 - `propose()` runs inside an engine step, **with no event loop** → the whole `DraftClient` path is blocking.
-- `speculate()` takes the whole batch at once; it is **not** a per-request API. Wall-clock time must be `max(RTT_i)`, not
-  `Σ RTT_i`; a per-request API would quietly serialize the N draft nodes and destroy exactly what we are trying to measure.
+- `speculate()` takes the whole batch at once. It is **not** a per-request API. Wall-clock time has to be `max(RTT_i)`, not
+  `Σ RTT_i`. A per-request API would quietly serialize the N draft nodes and wreck the very thing we want to measure.
 - Accept/reject feedback **needs no separate channel**: the `num_tokens_no_spec[i]` argument to `propose()` is the
   confirmed length of slot i, and its difference from the previous round is how many tokens were accepted this round (including the bonus token).
   `configure(stats=[])` exports it directly, so there is no need to infer it from timing slopes.
@@ -55,33 +55,33 @@ This is the layer `context.md` describes as "wrap ZMQ-to-HTTP behind an abstract
 |---|---|---|---|
 | Wire | Direct function call | DEALER/ROUTER + msgpack | HTTP/1.1 + JSON |
 | Server | None | [`DraftServer`](dsdreal/draft/server.py) | [`HttpDraftServer`](dsdreal/draft/http_server.py) |
-| Concurrency | N/A (serial; latency accounted as max) | One DEALER pipelines many messages: send-all → recv-all | Grouped by drafter, **one POST per drafter**, concurrent via a thread pool |
+| Concurrency | N/A (serial, latency counted as the max) | One DEALER pipelines many messages: send-all → recv-all | Grouped by drafter, **one POST per drafter**, concurrent via a thread pool |
 | Round trips per step | 0 | 1 per drafter (pipelined) | 1 per drafter |
 | Error propagation | Raised directly | `ERR ` frame → re-raised on the client | HTTP 400 + `{"error"}` → re-raised on the client |
 | Status | ✅ Stage 2a verified on GPU | ✅ Stage 2b verified on GPU | ✅ loopback tests pass, **not yet run on GPU** |
 
-**This is not an either/or; both stay.** The deciding number is `SpeculateReply.net_excess_ms`
+**We keep both.** The number that decides between them is `SpeculateReply.net_excess_ms`
 (= measured RTT − injected delay − drafter compute), i.e. the real cost of serialization plus queuing:
 HTTP is easier to debug (you can hit it with curl, packet captures are readable, other languages need no protocol change), while ZMQ has lower overhead.
-Both assert `net_excess_ms < 20ms` on loopback; which one wins on a real link should be decided by this number, not by assumption.
+Both assert `net_excess_ms < 20ms` on loopback. Which one wins on a real link is for this number to say, not for us to assume.
 
-[tests/test_transport_parity.py](tests/test_transport_parity.py) nails this down: the same sequence of
-propose/rollback rounds goes through each of the three transports, and **the tokens must be identical one by one**. A transport may change the cost, never the result.
+[tests/test_transport_parity.py](tests/test_transport_parity.py) checks this: the same sequence of
+propose/rollback rounds goes through each of the three transports, and **the tokens must match one for one**. A transport can change the cost but never the result.
 
 ### Two HTTP settings that are not optional
 
-Without them you measure your own misconfiguration, not the network:
+Skip these and you end up measuring your own config mistakes instead of the network:
 
 - **`protocol_version = "HTTP/1.1"`**: the stdlib default is 1.0, which closes the connection after every response, so **every step pays a
-  TCP handshake**, an extra RTT for nothing that also lands in `net_excess_ms`.
+  TCP handshake**, which adds a wasted RTT and also shows up in `net_excess_ms`.
 - **`disable_nagle_algorithm = True`**: otherwise small responses of a few dozen bytes wait for the 40 ms delayed-ACK timer.
-  On the client side, `http.client` already sets `TCP_NODELAY`; the server side does not.
+  On the client side, `http.client` already sets `TCP_NODELAY`, but the server side doesn't.
 
-One more is structural: **one POST carries all of a drafter's requests for that step**. ZMQ gets concurrency by pipelining many messages over one DEALER;
+There is also a structural one: **one POST carries all of a drafter's requests for that step**. ZMQ gets concurrency by pipelining many messages over one DEALER.
 HTTP/1.1 has no usable pipelining, so one POST per request would serialize a drafter's
 N sequences into N round trips. Batching per drafter makes the number of round trips depend only on the number of drafters, not on the batch size.
 This is asserted with the server-side counter `speculate_posts`, **not** with timing: eight extra round trips on loopback cost under 1 ms,
-which timing cannot see; it would only show up on a real link.
+far too little for timing to catch. It would only show up on a real link.
 
 ---
 
@@ -108,7 +108,7 @@ The scripts are in [scripts/](scripts/) (`verify_*.py`) with matching `slurm_*.s
 The slides' "rollback: prefix + verified + bonus, re-prefill" turns into three steps:
 
 1. **Drop last round's speculative tail**: after proposing γ tokens, the drafter is γ positions past the confirmed prefix.
-2. **Append the target's authoritative tokens**: these are **not** the tokens it proposed; the last one is the target's
+2. **Append the target's authoritative tokens**: these are **not** the tokens it proposed. The last one is the target's
    bonus/correction token, which the drafter has never seen.
 3. **Check against the absolute `num_confirmed`**, and on a mismatch **fail loudly** instead of drafting on from a wrong prefix.
    Using an absolute value instead of a delta also makes the protocol idempotent under retries (the HTTP client's retry after a dropped keep-alive connection relies on this).
@@ -127,9 +127,9 @@ would still have to go back to resubmission on every rejection.
 ## Stage 0 constraints
 
 **All probes passing means "plug into vLLM, don't fork" holds.** The full record of the first round on 0.21.0 is in
-[docs/stage0-findings.md](docs/stage0-findings.md) (in Chinese; note that it describes the original results on WSL / RTX 5070 Ti /
-vLLM 0.21.0; the platform has since moved to 0.27.1 / L40S and the probes were rerun, so
-`runs/stage0_probes.json` is authoritative).
+[docs/stage0-findings.md](docs/stage0-findings.md) (in Chinese). That document covers the original results on WSL / RTX 5070 Ti /
+vLLM 0.21.0. The platform has since moved to 0.27.1 / L40S and the probes were rerun, so
+`runs/stage0_probes.json` is the one to trust.
 
 Two API drifts hit when upgrading have been fixed in the probes: `NgramProposer.propose()` gained a leading
 `num_speculative_tokens` parameter, and `Scheduler.schedule()` gained `throttle_prefills`.
@@ -140,8 +140,8 @@ Constraints that still hold:
    stochastic rejection sampling. The question on the slides, "vLLM V1 sd support greedy only?": on this path, yes.
 2. **`RejectionSampler` has a second call site** (`_dummy_sampler_run` during memory profiling, with random logits).
    The L2 tap must have a `live` latch, or the acceptance data gets polluted **without any error** (788 vs 288).
-3. **0.27.1 supports `custom_class` natively**, so the `NgramProposer` subclass shim planned in the 0.21.0 days is unnecessary;
-   the `GPUModelRunner.__init__` monkeypatch in `plugin.py` has also been removed, since it unconditionally overwrote
+3. **0.27.1 supports `custom_class` natively**, so the `NgramProposer` subclass shim planned in the 0.21.0 days is no longer needed.
+   The `GPUModelRunner.__init__` monkeypatch in `plugin.py` has also been removed, since it unconditionally overwrote
    `self.drafter` and broke every non-custom_class run along with it.
 
 ---
@@ -151,7 +151,7 @@ Constraints that still hold:
 ```bash
 source scripts/env.sh          # source this before any entry point
 
-# 1. CPU only: all tests for the transport layer, proposer, and routing; no GPU, no model, seconds
+# 1. CPU only: tests for the transport layer, proposer and routing, no GPU or model, runs in seconds
 pytest tests -q                # torch is optional (needed only by the EAGLE3 engine tests)
 
 # 2. Needs a GPU
@@ -201,13 +201,13 @@ target = LLM(
 
 ```
 dsdreal/
-├── proto/      messages.py (msgspec; emits both JSON and msgpack)
+├── proto/      messages.py (msgspec, emits both JSON and msgpack)
 │               transport.py (DraftClient + InProcess / Zmq / Http)
 ├── draft/      base.py  engine_echo.py (no GPU)  engine_vllm.py (real model, batched generate)
 │               eagle3_model.py  engine_eagle3.py (remote EAGLE3 head)
 │               engine_replay.py (replay)  server.py (ZMQ)  http_server.py (HTTP)
 ├── target/     proposer.py (custom_class)  hidden_states.py (K8)  plugin.py (entry point)
-├── policy/     routing.py (drafter RR; target RR/Random/JSQ)  window.py (SpecDec++)
+├── policy/     routing.py (drafter RR, target RR/Random/JSQ)  window.py (SpecDec++)
 ├── netem/      base.py  null.py  sleep.py (RTT/jitter/latency matrix)
 ├── router/     target_server.py  frontend.py (N:M)
 ├── metrics/    records.py  collector.py  export.py
@@ -221,7 +221,7 @@ plan.md         full design (in Chinese): architecture, metric alignment, stages
 
 ## Table 3 (small scale): Vanilla SD / SpecDec++ / EAGLE3 × N drafters
 
-The plan and progress are in [docs/table3-plan.md](docs/table3-plan.md); **the results (real-system Table 3, gates, real vs sim, n:m) are in [docs/table3-results.md](docs/table3-results.md)** (both in Chinese). The online experiment pipeline:
+The plan and progress are in [docs/table3-plan.md](docs/table3-plan.md), and **the results (real-system Table 3, gates, real vs sim, n:m) are in [docs/table3-results.md](docs/table3-results.md)** (both in Chinese). The online experiment pipeline:
 
 ```
 trace (dsdSim gsm8k, Poisson arrivals) ─► experiments/driver.py ─► in-process LLMEngine (target)
@@ -232,19 +232,19 @@ trace (dsdSim gsm8k, Poisson arrivals) ─► experiments/driver.py ─► in-pr
 | Module | Role |
 |---|---|
 | [experiments/driver.py](dsdreal/experiments/driver.py) | Calls `add_request` at each arrival time and timestamps tokens step by step (not AsyncLLM: it moves the engine into another process, and the proposer's module-global configuration is lost) |
-| [metrics/collector.py](dsdreal/metrics/collector.py) | Derives each round's accepted count from the next round's `num_confirmed` delta; reports **two conventions** side by side: standard vs dsdSim (no bonus, TTFT to the first round with an accepted token, TPOT aggregated per token) |
-| [workload/trace.py](dsdreal/workload/trace.py) | dsdSim trace (`data/dsdsim/`, MIT) → prompts of exact length; `--chat-template` keeps the total length unchanged |
+| [metrics/collector.py](dsdreal/metrics/collector.py) | Derives each round's accepted count from the next round's `num_confirmed` delta, and reports **two conventions** side by side: standard vs dsdSim (no bonus, TTFT to the first round with an accepted token, TPOT aggregated per token) |
+| [workload/trace.py](dsdreal/workload/trace.py) | dsdSim trace (`data/dsdsim/`, MIT) → prompts of exact length, and `--chat-template` keeps the total length unchanged |
 | [policy/window.py](dsdreal/policy/window.py) | SpecDec++: a line-by-line port of the sim's `SpecPPGammaPolicy`, with per-position acceptance probabilities calibrated on the real system |
 | [target/hidden_states.py](dsdreal/target/hidden_states.py) | K8: gives the custom_class proposer the target's EAGLE3 aux hidden states (sliced to the newly confirmed positions) |
 | [draft/eagle3_model.py](dsdreal/draft/eagle3_model.py) / [engine_eagle3.py](dsdreal/draft/engine_eagle3.py) | Remote EAGLE3 head (ported from vLLM's llama_eagle3): KV rollback + re-prefill + chained drafting, batched |
-| [router/](dsdreal/router/) | N:M: target server processes + a router frontend (RR / Random / JSQ; TTFT counted from router entry) |
+| [router/](dsdreal/router/) | N:M: target server processes + a router frontend (RR / Random / JSQ, with TTFT counted from router entry) |
 | [sim/](sim/) | Runs dsdSim under the same configuration. Latency comes from one of two sources: a calibration file fitted from real runs by `calibrate_from_run.py` (default), or VIDUR's predictions on A6000 profiles (`--latency vidur`, see [sim/README.md](sim/README.md#latency-from-vidur)) |
 
 Gates (all passed locally on small models, rerun remotely with Llama-3.1-8B / 3.2-1B):
 
-- **Step A**: under online load in fp32, spec output == no-draft baseline (`scripts/compare_outputs.py`); the accounting `Σ(accepted+1)` is consistent with output length.
+- **Step A**: under online load in fp32, spec output == no-draft baseline (`scripts/compare_outputs.py`), and the accounting `Σ(accepted+1)` matches the output length.
 - **Step C**: per-request γ ∈ [2, 8] and equal to the policy's output, still lossless.
-- **Step D**: K8 alignment (per-position cos ≥ 0.98 against an HF reference, and clearly higher than off-by-one); remote EAGLE3 acceptance length within 5% of vLLM's native `method=eagle3` (locally: 1.970 vs 1.973); lossless in fp32 (30/30 locally).
+- **Step D**: K8 alignment (per-position cos ≥ 0.98 against an HF reference, and clearly higher than off-by-one). Remote EAGLE3 acceptance length is within 5% of vLLM's native `method=eagle3` (locally 1.970 vs 1.973), and output is lossless in fp32 (30/30 locally).
 
 On the remote (NYULAB: free GPUs only, at most 3), one command runs everything: `nohup scripts/run_all_nyulab.sh > runs/pipeline.log 2>&1 &`.
 Progress goes to `runs/pipeline.status`, and the results table to `runs/table3/table3.md`.
