@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""End-to-end check for the Stage 0 deliverable from context.md:
+"""End-to-end check for the Stage 0 deliverable from docs/notes/context.md:
 
     "用custom_class注册一个remotedrafter，现在可以replay一些预先录制的
     draft sequence"

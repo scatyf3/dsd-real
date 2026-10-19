@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Stage 2a gate: real draft model + InProcessDraftClient (fused, no network).
 
-Per context.md: "2a fused：真 draft 模型 + InProcessDraftClient（不碰网络）。
+Per docs/notes/context.md: "2a fused：真 draft 模型 + InProcessDraftClient（不碰网络）。
 门禁 = 无损性，fp32 下 γ∈{1,2,4,8} 逐 token 相同。"
 
 Two real vLLM engines share one process (VLLM_ENABLE_V1_MULTIPROCESSING=0,

@@ -50,7 +50,7 @@ agent告诉我有vllm插件这个东西，这里的plan是
 
 我们想做paper里的table3, 支持Vanilla SD, SpecDec++和EAGLE3的e2e 验证，支持一个小规模
 
-![alt text](image.png)
+(Table 3 of the DSD-Sim paper: Vanilla SD / SpecDec++ / EAGLE3 across N drafters; screenshot not kept in the repo.)
 
 
 

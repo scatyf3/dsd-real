@@ -17,7 +17,7 @@ dispatch relies on for every non-custom_class run.
 This module is therefore just the process-loading proof (register_probe,
 K5) for now. It becomes the real injection point again once something needs
 to run before engine construction in every process -- e.g. the L2 tap on
-RejectionSampler.forward for full_window acceptance_seq capture (plan.md
+RejectionSampler.forward for full_window acceptance_seq capture (docs/notes/plan.md
 Stage 2+).
 """
 from __future__ import annotations

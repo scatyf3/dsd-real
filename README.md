@@ -48,7 +48,7 @@ because the protocol does not carry a request id yet.
 
 ## Transport layer: three implementations, one contract
 
-This is the layer `context.md` describes as "wrap ZMQ-to-HTTP behind an abstraction first". All three implementations sit behind
+This is the layer `docs/notes/context.md` describes as "wrap ZMQ-to-HTTP behind an abstraction first". All three implementations sit behind
 [proto/transport.py](dsdreal/proto/transport.py), and `make_client(kind, ...)` picks one by name:
 
 | | `InProcessDraftClient` | `ZmqDraftClient` | `HttpDraftClient` |
@@ -212,11 +212,18 @@ dsdreal/
 ├── router/     target_server.py  frontend.py (N:M)
 ├── metrics/    records.py  collector.py  export.py
 ├── workload/   trace.py        experiments/  driver.py
-scripts/        env.sh  verify_*.py  slurm_*.sbatch  run_draft_server.py
-tests/          test_transport.py  test_zmq_transport.py  test_http_transport.py
-                test_transport_parity.py  test_remote_draft_proposer.py  test_routing.py
-docs/           stage0-findings.md
-plan.md         full design (in Chinese): architecture, metric alignment, stages, stopping criteria
+sim/            run dsdSim under the same config: make_config.py  run_sim.py  run_sweep.py
+                calibrate_from_run.py  dsdsim_shim.py  vidur/ (A6000 profile patch)
+scripts/        stage 0-2 checks: verify_*.py  slurm_*.sbatch
+                Table 3 pipeline: run_all_nyulab.sh  table3_sweep.sh  run_nto1.sh  run_nm.sh  make_table3.py
+                gates and real-vs-sim: gate_step{A,D}.sh  compare_outputs.py  final_compare.sh  compare_real_sim.py
+                (index with one line per script: scripts/README.md)
+tests/          CPU-only, no vLLM needed: transport (in-process / ZMQ / HTTP + parity), proposer,
+                routing, router, SpecDec++ window, metrics, workload, driver loop, EAGLE3 engine, VIDUR provider
+data/           dsdSim traces and acceptance profiles (MIT), VIDUR A6000 profiles
+results/        measured Table 3 (table3_final/, table3_client/)
+docs/           stage0-findings.md  table3-plan.md  table3-results.md  figures/
+docs/notes/     plan.md (full design)  context.md (original brief), both in Chinese
 ```
 
 ## Table 3 (small scale): Vanilla SD / SpecDec++ / EAGLE3 × N drafters

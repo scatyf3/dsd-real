@@ -48,7 +48,7 @@ draft token 列表。
 
 ## 传输层：三种实现，一个契约
 
-`context.md` 里写的「从 zmq 到 http，先包装成抽象层」就是这一层。三种实现都在
+`docs/notes/context.md` 里写的「从 zmq 到 http，先包装成抽象层」就是这一层。三种实现都在
 [proto/transport.py](dsdreal/proto/transport.py) 后面，`make_client(kind, ...)` 按名字选：
 
 | | `InProcessDraftClient` | `ZmqDraftClient` | `HttpDraftClient` |
@@ -212,11 +212,18 @@ dsdreal/
 ├── router/     target_server.py  frontend.py（N:M）
 ├── metrics/    records.py  collector.py  export.py
 ├── workload/   trace.py        experiments/  driver.py
-scripts/        env.sh  verify_*.py  slurm_*.sbatch  run_draft_server.py
-tests/          test_transport.py  test_zmq_transport.py  test_http_transport.py
-                test_transport_parity.py  test_remote_draft_proposer.py  test_routing.py
-docs/           stage0-findings.md
-plan.md         完整设计：架构、指标对齐、分阶段、终止判据
+sim/            同配置跑 dsdSim：make_config.py  run_sim.py  run_sweep.py
+                calibrate_from_run.py  dsdsim_shim.py  vidur/（A6000 profile 补丁）
+scripts/        Stage 0–2 验证：verify_*.py  slurm_*.sbatch
+                Table 3 流水线：run_all_nyulab.sh  table3_sweep.sh  run_nto1.sh  run_nm.sh  make_table3.py
+                门禁与 real vs sim：gate_step{A,D}.sh  compare_outputs.py  final_compare.sh  compare_real_sim.py
+                （逐个脚本的索引见 scripts/README.md）
+tests/          纯 CPU，不需要 vLLM：传输层（in-process / ZMQ / HTTP + parity）、proposer、
+                routing、router、SpecDec++ window、metrics、workload、driver loop、EAGLE3 engine、VIDUR provider
+data/           dsdSim 的 trace 和接受率 profile（MIT）、VIDUR A6000 profile
+results/        实测 Table 3（table3_final/、table3_client/）
+docs/           stage0-findings.md  table3-plan.md  table3-results.md  figures/
+docs/notes/     plan.md（完整设计）  context.md（最初的需求），均为中文
 ```
 
 ## Table 3（小规模）：Vanilla SD / SpecDec++ / EAGLE3 × N 个 drafter

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Small-scale Table 3 on NYULAB, <=3 GPUs (context.md): 1 target GPU + 2 draft
-# GPUs; N > 2 drafters share draft GPUs (tier T2, see plan.md §7).
+# Small-scale Table 3 on NYULAB, <=3 GPUs (docs/notes/context.md): 1 target GPU + 2 draft
+# GPUs; N > 2 drafters share draft GPUs (tier T2, see docs/notes/plan.md §7).
 #
 #   scripts/table3_sweep.sh [OUT] [METHODS] [NS]
 #   scripts/table3_sweep.sh runs/table3 "vanilla specpp eagle3" "1 2 4 7"

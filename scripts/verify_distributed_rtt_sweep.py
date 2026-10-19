@@ -2,7 +2,7 @@
 """Stage 2b gate: distributed (real ZMQ) -- TPOT must rise linearly with
 injected RTT.
 
-Per context.md: "2b 分布式：同样的模型 + ZMQ。接受率此时已知正确，所以这步只
+Per docs/notes/context.md: "2b 分布式：同样的模型 + ZMQ。接受率此时已知正确，所以这步只
 测传输。门禁 = TPOT 随 RTT 线性上升，斜率 ≈ 1/L̄——不线性就说明 propose() 掉出
 了关键路径（K2 的运行时复查）。"
 

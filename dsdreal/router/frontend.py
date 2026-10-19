@@ -4,7 +4,7 @@ each to a target chosen by a routing policy (RR / Random / JSQ).
 Targets are `dsdreal.router.target_server` processes. Arrival is stamped here
 (scheduled time, absolute perf_counter ms, same machine => same clock), so
 TTFT covers routing plus the hop to the target -- the "TTFT from router
-entry" definition plan.md §5 fixes. JSQ reads the latest queue depth each
+entry" definition docs/notes/plan.md §5 fixes. JSQ reads the latest queue depth each
 target pushed (after every step) plus the requests routed there since, never a
 blocking query: a blocking STATS round trip waits for the target's current
 step and serialised admission (seen on GPU: 3x TTFT under JSQ vs RR).

@@ -10,7 +10,7 @@ Per sequence the drafter keeps:
   Entries past `m` came from last round's chained drafting (draft tokens,
   the head's own hidden states).
 
-Each round (context.md's "kv 回退 + reprefill"):
+Each round (docs/notes/context.md's "kv 回退 + reprefill"):
 1. adopt the target's accepted tokens and the new positions' hidden states;
 2. roll back: truncate the KV to `m` -- the drafted tail is stale whether or
    not the target accepted it, because it was computed from the head's own
