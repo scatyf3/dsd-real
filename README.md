@@ -1,5 +1,7 @@
 # dsd-real
 
+[![CI](https://github.com/scatyf3/dsd-real/actions/workflows/ci.yml/badge.svg)](https://github.com/scatyf3/dsd-real/actions/workflows/ci.yml)
+
 **English** | [中文](README.zh-CN.md)
 
 A real-system implementation of disaggregated speculative decoding (DSD), built to validate the conclusions of the DSD-Sim simulator end to end.

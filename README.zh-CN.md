@@ -1,5 +1,7 @@
 # dsd-real
 
+[![CI](https://github.com/scatyf3/dsd-real/actions/workflows/ci.yml/badge.svg)](https://github.com/scatyf3/dsd-real/actions/workflows/ci.yml)
+
 [English](README.md) | **中文**
 
 分布式投机解码（disaggregated speculative decoding）的真实系统实现，用来端到端验证 DSD-Sim 的仿真结论。
