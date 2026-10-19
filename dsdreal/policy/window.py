@@ -51,7 +51,7 @@ class AcceptanceProfile:
 
     @classmethod
     def from_steps(cls, rows: Iterable[Mapping], context_len: Mapping[str, int],
-                   edges: Sequence[int] = (), min_count: int = 20) -> "AcceptanceProfile":
+                   edges: Sequence[int] = (), min_count: int = 20) -> AcceptanceProfile:
         """Estimate from steps.jsonl rows (dsdreal/metrics/export.py).
 
         A round with n_draft drafts and `accepted` accepted observes position
@@ -97,7 +97,7 @@ class AcceptanceProfile:
         Path(path).write_text(json.dumps({"edges": self.edges, "probs": self.probs}, indent=2))
 
     @classmethod
-    def from_json(cls, path: str | Path) -> "AcceptanceProfile":
+    def from_json(cls, path: str | Path) -> AcceptanceProfile:
         d = json.loads(Path(path).read_text())
         return cls(edges=list(d["edges"]), probs=[list(p) for p in d["probs"]])
 

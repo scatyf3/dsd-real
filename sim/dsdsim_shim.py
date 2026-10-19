@@ -42,17 +42,17 @@ What it does (see sim/README.md for the why):
 """
 from __future__ import annotations
 
-import math
 import os
 import sys
 import types
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 _SIM = None
 
 
-def dsdsim_root(explicit: Optional[str] = None) -> Path:
+def dsdsim_root(explicit: str | None = None) -> Path:
     root = explicit or os.environ.get("DSDSIM_ROOT")
     if not root:
         raise SystemExit("set DSDSIM_ROOT (or pass --dsdsim-root) to the dsdSim clone")
@@ -62,7 +62,7 @@ def dsdsim_root(explicit: Optional[str] = None) -> Path:
     return p
 
 
-def load_sim(root: Optional[str] = None):
+def load_sim(root: str | None = None):
     """Import dsdSim's `sim` module with all shims applied. Idempotent."""
     global _SIM
     if _SIM is not None:
@@ -122,10 +122,10 @@ class CalibratedProvider:
     """
 
     def __init__(self) -> None:
-        self._profiles: Dict[str, Dict[str, Any]] = {}
+        self._profiles: dict[str, dict[str, Any]] = {}
 
     def register_target(self, *, target_id: str, model: str, hardware: str,
-                        metadata: Optional[Mapping[str, Any]] = None) -> None:
+                        metadata: Mapping[str, Any] | None = None) -> None:
         self._profiles[str(target_id)] = dict(metadata or {})
 
     def flush(self) -> None:
@@ -204,7 +204,7 @@ def _vidur_cpu_overhead(enabled: bool) -> None:
         functools.partial(base, skip_cpu_overhead_modeling=False) if enabled else base)
 
 
-def _runner_predict(cache_dir: Optional[str], cpu_overhead: bool = False):
+def _runner_predict(cache_dir: str | None, cpu_overhead: bool = False):
     """(vidur profile, phase requests of one step) -> time in ms, from
     dsdSim's VidurRealtimeRunner: GPU time of the transformer blocks, plus
     VIDUR's CPU-overhead model if `cpu_overhead`. Each request goes through
@@ -281,11 +281,11 @@ class VidurProvider:
 
     def __init__(self, predict) -> None:
         self._predict = predict
-        self._profiles: Dict[str, Dict[str, Any]] = {}
-        self._cache: Dict[Any, float] = {}
+        self._profiles: dict[str, dict[str, Any]] = {}
+        self._cache: dict[Any, float] = {}
 
     def register_target(self, *, target_id: str, model: str, hardware: str,
-                        metadata: Optional[Mapping[str, Any]] = None) -> None:
+                        metadata: Mapping[str, Any] | None = None) -> None:
         self._profiles[str(target_id)] = dict(metadata or {})
 
     def flush(self) -> None:
@@ -301,7 +301,7 @@ class VidurProvider:
             lat = self._cache[key] = float(self._predict(profile, requests))
         return lat
 
-    def batch_ms(self, target_id, requests) -> Optional[float]:
+    def batch_ms(self, target_id, requests) -> float | None:
         meta = self._profiles.get(str(target_id or ""))
         if meta is None:
             return None
@@ -434,7 +434,7 @@ def _patch_serve_loop_tail(sim) -> None:
                   ind + "    yield self.env.timeout(_tail)",
                   ind + "    self.busy_ms += _tail"]
 
-    ns: Dict[str, Any] = {}
+    ns: dict[str, Any] = {}
     exec(compile("\n".join(lines), "<dsdsim _serve_loop + lockstep tail>", "exec"), vars(sim), ns)
     sim.TargetServer._serve_loop = ns["_serve_loop"]
     sim.TargetServer._dsd_patched_serve_loop_src = "\n".join(lines)
@@ -447,7 +447,7 @@ def lockstep_extra_ms(calib: Mapping[str, Any], batch, default_gamma: int, provi
     N drafters (round-robin), drafters run in parallel, the step waits for the
     slowest one.
     """
-    phys: Dict[str, int] = {}
+    phys: dict[str, int] = {}
     gmax = 1
     ctx = 0
     for j in batch:
@@ -462,7 +462,7 @@ def lockstep_extra_ms(calib: Mapping[str, Any], batch, default_gamma: int, provi
     return float(calib.get("rtt_ms", 0.0)) + draft_latency_ms(calib, gmax, per_drafter, provider, ctx)
 
 
-_PROFILE_CACHE: Dict[str, Any] = {}
+_PROFILE_CACHE: dict[str, Any] = {}
 
 
 def _patch_acceptance_profile(sim) -> None:
@@ -503,7 +503,7 @@ def _patch_acceptance_profile(sim) -> None:
     DraftServer._lookup_acceptance = patched
 
 
-_REPLAY_CACHE: Dict[str, Any] = {}
+_REPLAY_CACHE: dict[str, Any] = {}
 
 
 def _patch_acceptance_replay(sim) -> None:

@@ -266,8 +266,7 @@ def warmup(target: Target, n: int) -> None:
 def build_workload(args, n_drafters: int) -> tuple[list[WorkItem], float | None]:
     from transformers import AutoTokenizer
 
-    from dsdreal.workload.trace import (build_requests, chat_wrap, load_prompt_texts,
-                                        load_sim_trace, retime)
+    from dsdreal.workload.trace import build_requests, chat_wrap, load_prompt_texts, load_sim_trace, retime
 
     entries = load_sim_trace(args.trace)[:args.n_requests]
     rate = args.rate_rps or (args.per_draft_rps * max(n_drafters, 1) if args.per_draft_rps else None)

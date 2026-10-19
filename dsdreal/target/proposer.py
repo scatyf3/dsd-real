@@ -35,8 +35,8 @@ import numpy as np
 from dsdreal.metrics.records import RoundRecord
 from dsdreal.policy.routing import RoutingPolicy
 from dsdreal.policy.window import WindowPolicy
-from dsdreal.proto.transport import DraftClient
 from dsdreal.proto.messages import SpeculateRequest
+from dsdreal.proto.transport import DraftClient
 
 _default_client: DraftClient | None = None
 _stats_sink: list[int] | None = None
@@ -175,7 +175,7 @@ class RemoteDraftProposer:
             self._row_req[row] = rid
             self._pending_hidden.setdefault(rid, []).append(t)
 
-    def _take_hidden(self, row: int, seq: "_Seq", n_hist: int) -> tuple[bytes, int, str]:
+    def _take_hidden(self, row: int, seq: _Seq, n_hist: int) -> tuple[bytes, int, str]:
         import torch
 
         rid = self._row_req.get(row)

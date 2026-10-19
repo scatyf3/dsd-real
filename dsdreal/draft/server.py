@@ -51,7 +51,7 @@ class DraftServer:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def start(self) -> "DraftServer":
+    def start(self) -> DraftServer:
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
         return self
@@ -100,7 +100,7 @@ class DraftServer:
         self._sock.close(linger=0)
         self.engine.close()
 
-    def __enter__(self) -> "DraftServer":
+    def __enter__(self) -> DraftServer:
         return self.start()
 
     def __exit__(self, *exc) -> None:

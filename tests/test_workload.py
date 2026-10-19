@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from dsdreal.workload.trace import (
-    TraceEntry, build_requests, load_prompt_texts, load_sim_trace, poisson_arrivals, retime,
+    TraceEntry,
+    build_requests,
+    load_prompt_texts,
+    load_sim_trace,
+    poisson_arrivals,
+    retime,
 )
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "dsdsim"

@@ -24,8 +24,6 @@ import argparse
 import json
 import os
 
-import numpy as np
-
 
 def main() -> int:
     ap = argparse.ArgumentParser()

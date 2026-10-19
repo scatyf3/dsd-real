@@ -53,7 +53,7 @@ class DraftClient(ABC):
     def drafter_ids(self) -> list[str]:
         """Every drafter this client can reach, for a RoutingPolicy to pick from."""
 
-    def close(self) -> None:
+    def close(self) -> None:  # noqa: B027 -- optional hook; in-process clients hold nothing
         pass
 
     def __enter__(self):
@@ -149,7 +149,7 @@ class ZmqDraftClient(DraftClient):
 
     def __init__(self, addresses: dict[str, str], node_id: str = "t0",
                  emulator: NetworkEmulator | None = None,
-                 context: "zmq.Context | None" = None,
+                 context: zmq.Context | None = None,
                  timeout_s: float = 5.0) -> None:
         super().__init__(node_id=node_id, emulator=emulator)
         self._ctx = context or zmq.Context.instance()
@@ -163,7 +163,7 @@ class ZmqDraftClient(DraftClient):
         self._enc = msgspec.msgpack.Encoder()
         self._reply_dec = msgspec.msgpack.Decoder(SpeculateReply)
 
-    def _socket_for(self, drafter_id: str) -> "zmq.Socket":
+    def _socket_for(self, drafter_id: str) -> zmq.Socket:
         try:
             return self._sockets[drafter_id]
         except KeyError:
@@ -280,7 +280,7 @@ class HttpDraftClient(DraftClient):
                 f"registered: {sorted(self._addresses)}"
             ) from None
 
-    def _conn_for(self, drafter_id: str) -> "http.client.HTTPConnection":
+    def _conn_for(self, drafter_id: str) -> http.client.HTTPConnection:
         with self._lock:
             conn = self._conns.get(drafter_id)
             if conn is None:

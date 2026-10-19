@@ -1,5 +1,6 @@
 """Minimal vLLM smoke test on this GPU. Confirms model load + generation."""
-import os, time
+import os
+import time
 
 
 def main():

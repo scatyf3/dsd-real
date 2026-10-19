@@ -123,7 +123,7 @@ class HttpDraftServer:
         """HTTP round trips served on /speculate, one per drafter per step."""
         return self._httpd.speculate_posts
 
-    def start(self) -> "HttpDraftServer":
+    def start(self) -> HttpDraftServer:
         self._thread = threading.Thread(target=self._httpd.serve_forever,
                                         kwargs={"poll_interval": 0.05},
                                         daemon=True)
@@ -137,7 +137,7 @@ class HttpDraftServer:
         self._httpd.server_close()
         self.engine.close()
 
-    def __enter__(self) -> "HttpDraftServer":
+    def __enter__(self) -> HttpDraftServer:
         return self.start()
 
     def __exit__(self, *exc) -> None:

@@ -234,8 +234,8 @@ def build(args) -> tuple[dict, list[dict]]:
             "vidur_overhead": str(Path(args.vidur_overhead).resolve()) if vidur and args.vidur_overhead else None,
             "vidur_cpu_overhead": vidur and args.vidur_cpu_overhead,
             "replay_from": str(Path(args.replay_from).resolve()) if args.replay_from else None,
-            "acceptance": ("fixed:%s" % args.acceptance_fixed_rate if args.acceptance_fixed_rate is not None
-                           else "profile:%s" % args.acceptance_profile if args.acceptance_profile
+            "acceptance": (f"fixed:{args.acceptance_fixed_rate}" if args.acceptance_fixed_rate is not None
+                           else f"profile:{args.acceptance_profile}" if args.acceptance_profile
                            else ACCEPTANCE_JOBLIB),
         },
         "sim_time_ms": float(last_arrival + args.tail_ms),

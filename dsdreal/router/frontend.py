@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     results = router.drain()
 
     per_request = []
-    for tid, res in results.items():
+    for res in results.values():
         reqs = [RequestRecord(**r) for r in res["requests"]]
         rounds = [RoundRecord(**r) for r in res["rounds"]]
         per_request.extend(collect(reqs, rounds))
